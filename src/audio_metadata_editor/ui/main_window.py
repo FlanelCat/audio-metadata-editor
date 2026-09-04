@@ -1,5 +1,7 @@
 from pathlib import Path
 
+from PySide6.QtCore import Qt
+from PySide6.QtGui import QImage, QPixmap
 from PySide6.QtWidgets import (
     QFileDialog,
     QFormLayout,
@@ -74,6 +76,15 @@ class MainWindow(QMainWindow):
         title.setStyleSheet("font-size: 18px; font-weight: bold;")
 
         metadata_layout.addWidget(title)
+
+        self.artwork_label = QLabel()
+        self.artwork_label.setFixedSize(250, 250)
+        self.artwork_label.setScaledContents(False)
+        self.artwork_label.setAlignment(
+            Qt.AlignmentFlag.AlignCenter
+        )
+
+        metadata_layout.addWidget(self.artwork_label)
 
         form = QFormLayout()
 
@@ -207,11 +218,37 @@ class MainWindow(QMainWindow):
     def _file_selected(self, path):
         metadata = read_metadata(Path(path))
 
+        if metadata.artwork:
+            image = QImage.fromData(metadata.artwork)
+
+            if not image.isNull():
+                pixmap = QPixmap.fromImage(image)
+                self.artwork_label.setPixmap(
+                    pixmap.scaled(
+                        self.artwork_label.size(),
+                        Qt.AspectRatioMode.KeepAspectRatio,
+                        Qt.TransformationMode.SmoothTransformation,
+                    )
+                )
+            else:
+                self.artwork_label.clear()
+        else:
+            self.artwork_label.clear()
+
         self.title_edit.setText(metadata.title)
         self.artist_edit.setText(metadata.artist)
         self.album_edit.setText(metadata.album)
         self.album_artist_edit.setText(metadata.album_artist)
         self.genre_edit.setText(metadata.genre)
-        self.track_edit.setText(metadata.track)
-        self.disc_edit.setText(metadata.disc)
-            
+        self.track_edit.setText(
+            str(metadata.track_number)
+            if metadata.track_number is not None
+            else ""
+        )
+
+        self.disc_edit.setText(
+            str(metadata.disc_number)
+            if metadata.disc_number is not None
+            else ""
+        )
+                    
