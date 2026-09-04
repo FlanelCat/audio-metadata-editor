@@ -1,40 +1,17 @@
-from dataclasses import dataclass
 from pathlib import Path
 
-from mutagen import File
-
-
-@dataclass
-class Metadata:
-    title: str = ""
-    artist: str = ""
-    album: str = ""
-    album_artist: str = ""
-    genre: str = ""
-    track: str = ""
-    disc: str = ""
+from .m4b import read_m4b_metadata
+from .model import Metadata
+from .mp3 import read_mp3_metadata
 
 
 def read_metadata(path: Path) -> Metadata:
-    audio = File(path, easy=True)
+    suffix = path.suffix.lower()
 
-    if audio is None:
-        return Metadata()
+    if suffix == ".mp3":
+        return read_mp3_metadata(path)
 
-    def get_value(key: str) -> str:
-        value = audio.get(key)
+    if suffix == ".m4b":
+        return read_m4b_metadata(path)
 
-        if not value:
-            return ""
-
-        return str(value[0])
-
-    return Metadata(
-        title=get_value("title"),
-        artist=get_value("artist"),
-        album=get_value("album"),
-        album_artist=get_value("albumartist"),
-        genre=get_value("genre"),
-        track=get_value("tracknumber"),
-        disc=get_value("discnumber"),
-    )
+    return Metadata()
