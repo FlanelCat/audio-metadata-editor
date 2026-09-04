@@ -207,11 +207,11 @@ class MainWindow(QMainWindow):
     def _file_selected(self, path):
         metadata = read_metadata(Path(path))
 
-        self.title_edit.setText(metadata.get("title", ""))
-        self.artist_edit.setText(metadata.get("artist", ""))
-        self.album_edit.setText(metadata.get("album", ""))
-        self.album_artist_edit.setText(metadata.get("album_artist", ""))
-        self.genre_edit.setText(metadata.get("genre", ""))
-        self.track_edit.setText(metadata.get("track", ""))
-        self.disc_edit.setText(metadata.get("disc", ""))
+        self.title_edit.setText(metadata.title)
+        self.artist_edit.setText(metadata.artist)
+        self.album_edit.setText(metadata.album)
+        self.album_artist_edit.setText(metadata.album_artist)
+        self.genre_edit.setText(metadata.genre)
+        self.track_edit.setText(metadata.track)
+        self.disc_edit.setText(metadata.disc)
             

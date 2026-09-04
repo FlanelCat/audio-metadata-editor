@@ -63,21 +63,21 @@ class FileList(QTableWidget):
             metadata = read_metadata(file_path)
 
             self.setItem(
-                row,
-                1,
-                QTableWidgetItem(metadata.get("title", "")),
+            row,
+            1,
+            QTableWidgetItem(metadata.title),
             )
 
             self.setItem(
                 row,
                 2,
-                QTableWidgetItem(metadata.get("artist", "")),
+                QTableWidgetItem(metadata.artist),
             )
 
             self.setItem(
                 row,
                 3,
-                QTableWidgetItem(metadata.get("album", "")),
+                QTableWidgetItem(metadata.album),
             )
 
             self.item(row, 0).setData(
