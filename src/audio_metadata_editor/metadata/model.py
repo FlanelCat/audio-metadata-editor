@@ -18,6 +18,7 @@ class Metadata:
     date: str = ""
     composer: str = ""
     comment: str = ""
+    id3v1_comment: str = ""
     description: str = ""
     publisher: str = ""
     copyright: str = ""

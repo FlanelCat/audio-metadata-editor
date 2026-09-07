@@ -8,6 +8,8 @@ from PySide6.QtWidgets import (
     QLabel,
     QLineEdit,
     QMainWindow,
+    QMessageBox,
+    QPlainTextEdit,
     QPushButton,
     QSplitter,
     QToolBar,
@@ -18,7 +20,11 @@ from PySide6.QtWidgets import (
 )
 
 from .file_list import FileList
-from ..metadata.reader import read_metadata
+from ..metadata import (
+    read_metadata,
+    write_mp3_metadata,
+    write_m4b_metadata,
+)
 
 class MainWindow(QMainWindow):
     def __init__(self):
@@ -28,6 +34,8 @@ class MainWindow(QMainWindow):
         self.resize(1200, 700)
 
         self.root_path = None
+        self.current_file = None
+        self.current_metadata = None
 
         self._create_toolbar()
         self._create_main_layout()
@@ -44,6 +52,7 @@ class MainWindow(QMainWindow):
         refresh_button.clicked.connect(self._refresh_tree)
 
         save_button = QPushButton("Save Changes")
+        save_button.clicked.connect(self._save_changes)
 
         toolbar.addWidget(open_button)
         toolbar.addWidget(refresh_button)
@@ -94,7 +103,20 @@ class MainWindow(QMainWindow):
         self.album_artist_edit = QLineEdit()
         self.genre_edit = QLineEdit()
         self.track_edit = QLineEdit()
+        self.track_total_edit = QLineEdit()
         self.disc_edit = QLineEdit()
+        self.disc_total_edit = QLineEdit()        
+        self.narrator_edit = QLineEdit()
+        self.series_edit = QLineEdit()
+        self.series_number_edit = QLineEdit()
+        self.publisher_edit = QLineEdit()
+        self.date_edit = QLineEdit()
+        self.composer_edit = QLineEdit()
+        self.comment_edit = QLineEdit()
+        self.id3v1_comment_edit = QLineEdit()
+        self.copyright_edit = QLineEdit()
+        self.description_edit = QPlainTextEdit()
+        self.description_edit.setMaximumHeight(120)
 
         form.addRow("Title", self.title_edit)
         form.addRow("Artist", self.artist_edit)
@@ -102,7 +124,19 @@ class MainWindow(QMainWindow):
         form.addRow("Album Artist", self.album_artist_edit)
         form.addRow("Genre", self.genre_edit)
         form.addRow("Track", self.track_edit)
+        form.addRow("Track Total", self.track_total_edit)
         form.addRow("Disc", self.disc_edit)
+        form.addRow("Disc Total", self.disc_total_edit)
+        form.addRow("Narrator", self.narrator_edit)
+        form.addRow("Series", self.series_edit)
+        form.addRow("Series Number", self.series_number_edit)
+        form.addRow("Publisher", self.publisher_edit)
+        form.addRow("Date", self.date_edit)
+        form.addRow("Composer", self.composer_edit)
+        form.addRow("Comment", self.comment_edit)
+        form.addRow("ID3v1 Comment", self.id3v1_comment_edit)
+        form.addRow("Copyright", self.copyright_edit)
+        form.addRow("Description", self.description_edit)
 
         metadata_layout.addLayout(form)
         metadata_layout.addStretch()
@@ -216,7 +250,10 @@ class MainWindow(QMainWindow):
             self._populate_root()
 
     def _file_selected(self, path):
+        self.current_file = Path(path)
+
         metadata = read_metadata(Path(path))
+        self.current_metadata = metadata
 
         if metadata.artwork:
             image = QImage.fromData(metadata.artwork)
@@ -240,9 +277,16 @@ class MainWindow(QMainWindow):
         self.album_edit.setText(metadata.album)
         self.album_artist_edit.setText(metadata.album_artist)
         self.genre_edit.setText(metadata.genre)
+        
         self.track_edit.setText(
             str(metadata.track_number)
             if metadata.track_number is not None
+            else ""
+        )
+
+        self.track_total_edit.setText(
+            str(metadata.track_total)
+            if metadata.track_total is not None
             else ""
         )
 
@@ -251,4 +295,137 @@ class MainWindow(QMainWindow):
             if metadata.disc_number is not None
             else ""
         )
-                    
+
+        self.disc_total_edit.setText(
+            str(metadata.disc_total)
+            if metadata.disc_total is not None
+            else ""
+        )
+
+        self.narrator_edit.setText(metadata.narrator)
+        self.series_edit.setText(metadata.series)
+        self.series_number_edit.setText(metadata.series_number)
+        self.publisher_edit.setText(metadata.publisher)
+        self.date_edit.setText(metadata.date)
+        self.composer_edit.setText(metadata.composer)
+        self.comment_edit.setText(metadata.comment)
+        self.id3v1_comment_edit.setText(metadata.id3v1_comment)
+        self.id3v1_comment_edit.setEnabled(
+            self.current_file.suffix.lower() == ".mp3"
+        )
+        self.copyright_edit.setText(metadata.copyright)
+        self.description_edit.setPlainText(metadata.description)
+
+    def _get_edited_metadata(self):
+        from audio_metadata_editor.metadata import Metadata
+
+        def get_number(text):
+            text = text.strip()
+
+            if not text:
+                return None
+
+            try:
+                return int(text)
+            except ValueError:
+                return None
+
+        return Metadata(
+            title=self.title_edit.text(),
+            artist=self.artist_edit.text(),
+            album=self.album_edit.text(),
+            album_artist=self.album_artist_edit.text(),
+            genre=self.genre_edit.text(),
+            track_number=get_number(self.track_edit.text()),
+            track_total=get_number(self.track_total_edit.text()),
+            disc_number=get_number(self.disc_edit.text()),
+            disc_total=get_number(self.disc_total_edit.text()),
+            narrator=self.narrator_edit.text(),
+            series=self.series_edit.text(),
+            series_number=self.series_number_edit.text(),
+            publisher=self.publisher_edit.text(),
+            date=self.date_edit.text(),
+            composer=self.composer_edit.text(),
+            comment=self.comment_edit.text(),
+            id3v1_comment=self.id3v1_comment_edit.text(),
+            copyright=self.copyright_edit.text(),
+            description=self.description_edit.toPlainText(),
+        )
+
+    def _save_changes(self):
+        if self.current_file is None:
+            QMessageBox.warning(
+                self,
+                "No File Selected",
+                "Please select a file before saving.",
+            )
+            return
+
+        if not self._has_unsaved_changes():
+            QMessageBox.information(
+                self,
+                "No Changes",
+                "There are no changes to save.",
+            )
+            return
+
+        metadata = self._get_edited_metadata()
+
+        suffix = self.current_file.suffix.lower()
+
+        try:
+            if suffix == ".mp3":
+                write_mp3_metadata(self.current_file, metadata)
+            elif suffix == ".m4b":
+                write_m4b_metadata(self.current_file, metadata)
+            else:
+                QMessageBox.warning(
+                    self,
+                    "Unsupported File",
+                    f"Writing {suffix} is not supported.",
+                )
+                return
+        except Exception as exc:
+            QMessageBox.critical(
+                self,
+                "Save Failed",
+                f"Could not save the file:\n\n{exc}",
+            )
+            return
+
+        self.current_metadata = metadata
+
+        QMessageBox.information(
+            self,
+            "Saved",
+            f"Metadata saved successfully:\n\n{self.current_file.name}",
+        )
+
+    def _has_unsaved_changes(self):
+        if self.current_metadata is None:
+            return False
+
+        edited = self._get_edited_metadata()
+        loaded = self.current_metadata
+
+        return (
+            edited.title != loaded.title
+            or edited.artist != loaded.artist
+            or edited.album != loaded.album
+            or edited.album_artist != loaded.album_artist
+            or edited.genre != loaded.genre
+            or edited.track_number != loaded.track_number
+            or edited.track_total != loaded.track_total
+            or edited.disc_number != loaded.disc_number
+            or edited.disc_total != loaded.disc_total
+            or edited.date != loaded.date
+            or edited.composer != loaded.composer
+            or edited.comment != loaded.comment
+            or edited.id3v1_comment != loaded.id3v1_comment
+            or edited.copyright != loaded.copyright
+            or edited.description != loaded.description
+            or edited.publisher != loaded.publisher
+            or edited.narrator != loaded.narrator
+            or edited.series != loaded.series
+            or edited.series_number != loaded.series_number
+        )
