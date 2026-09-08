@@ -455,3 +455,34 @@ class MainWindow(QMainWindow):
             or edited.series != loaded.series
             or edited.series_number != loaded.series_number
         )
+
+    def closeEvent(self, event):
+        if not self._has_unsaved_changes():
+            event.accept()
+            return
+
+        reply = QMessageBox.question(
+            self,
+            "Unsaved Changes",
+            f"You have unsaved changes to:\n\n"
+            f"{self.current_file.name}\n\n"
+            "Do you want to save them before closing?",
+            QMessageBox.StandardButton.Save
+            | QMessageBox.StandardButton.Discard
+            | QMessageBox.StandardButton.Cancel,
+            QMessageBox.StandardButton.Save,
+        )
+
+        if reply == QMessageBox.StandardButton.Save:
+            self._save_changes()
+
+            if self._has_unsaved_changes():
+                event.ignore()
+            else:
+                event.accept()
+
+        elif reply == QMessageBox.StandardButton.Discard:
+            event.accept()
+
+        else:
+            event.ignore()        
