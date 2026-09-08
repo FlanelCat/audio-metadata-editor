@@ -250,9 +250,35 @@ class MainWindow(QMainWindow):
             self._populate_root()
 
     def _file_selected(self, path):
-        self.current_file = Path(path)
+        new_file = Path(path)
 
-        metadata = read_metadata(Path(path))
+        if self.current_file is not None and new_file != self.current_file:
+            if self._has_unsaved_changes():
+                reply = QMessageBox.question(
+                    self,
+                    "Unsaved Changes",
+                    f"You have unsaved changes to:\n\n"
+                    f"{self.current_file.name}\n\n"
+                    "Do you want to save them before switching files?",
+                    QMessageBox.StandardButton.Save
+                    | QMessageBox.StandardButton.Discard
+                    | QMessageBox.StandardButton.Cancel,
+                    QMessageBox.StandardButton.Save,
+                )
+
+                if reply == QMessageBox.StandardButton.Save:
+                    self._save_changes()
+
+                    if self._has_unsaved_changes():
+                        return
+
+                elif reply == QMessageBox.StandardButton.Cancel:
+                    self.file_list.select_file(self.current_file)
+                    return
+
+        self.current_file = new_file
+
+        metadata = read_metadata(new_file)
         self.current_metadata = metadata
 
         if metadata.artwork:
@@ -277,7 +303,7 @@ class MainWindow(QMainWindow):
         self.album_edit.setText(metadata.album)
         self.album_artist_edit.setText(metadata.album_artist)
         self.genre_edit.setText(metadata.genre)
-        
+
         self.track_edit.setText(
             str(metadata.track_number)
             if metadata.track_number is not None

@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from PySide6.QtCore import Signal
+from PySide6.QtCore import QSignalBlocker, Signal
 from PySide6.QtWidgets import QTableWidget, QTableWidgetItem
 
 from ..metadata.reader import read_metadata
@@ -100,3 +100,16 @@ class FileList(QTableWidget):
 
         if path:
             self.file_selected.emit(path)
+
+    def select_file(self, path):
+        for row in range(self.rowCount()):
+            item = self.item(row, 0)
+
+            if item is None:
+                continue
+
+            if item.data(256) == str(path):
+                with QSignalBlocker(self):
+                    self.clearSelection()
+                    self.selectRow(row)
+                return
