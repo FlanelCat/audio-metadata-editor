@@ -181,6 +181,11 @@ class MainWindow(QMainWindow):
 
         root_item.setExpanded(True)
 
+        self.directory_tree.setCurrentItem(root_item)
+        root_item.setSelected(True)
+
+        self._directory_selected(root_item, 0)
+
     def _populate_directory(self, item):
         path = Path(item.data(0, 256))
 

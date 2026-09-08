@@ -1,7 +1,7 @@
 from pathlib import Path
 
 from PySide6.QtCore import QSignalBlocker, Signal
-from PySide6.QtWidgets import QTableWidget, QTableWidgetItem
+from PySide6.QtWidgets import QHeaderView, QTableWidget, QTableWidgetItem
 
 from ..metadata.reader import read_metadata
 
@@ -14,9 +14,18 @@ class FileList(QTableWidget):
     def __init__(self):
         super().__init__()
 
-        self.setColumnCount(4)
+        self.setColumnCount(8)
         self.setHorizontalHeaderLabels(
-            ["Filename", "Title", "Artist", "Album"]
+            [
+                "Filename",
+                "Track",
+                "Title",
+                "Artist",
+                "Album",
+                "Series",
+                "Series #",
+                "Narrator",
+            ]
         )
 
         self.setSelectionBehavior(
@@ -31,7 +40,17 @@ class FileList(QTableWidget):
             QTableWidget.EditTrigger.NoEditTriggers
         )
 
-        self.horizontalHeader().setStretchLastSection(True)
+        header = self.horizontalHeader()
+
+        header.setStretchLastSection(False)
+        header.setSectionResizeMode(0, QHeaderView.ResizeMode.Interactive)
+        header.setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents)
+        header.setSectionResizeMode(2, QHeaderView.ResizeMode.Interactive)
+        header.setSectionResizeMode(3, QHeaderView.ResizeMode.Interactive)
+        header.setSectionResizeMode(4, QHeaderView.ResizeMode.Interactive)
+        header.setSectionResizeMode(5, QHeaderView.ResizeMode.Interactive)
+        header.setSectionResizeMode(6, QHeaderView.ResizeMode.ResizeToContents)
+        header.setSectionResizeMode(7, QHeaderView.ResizeMode.Interactive)    
 
         self.itemSelectionChanged.connect(self._selection_changed)
 
@@ -62,22 +81,50 @@ class FileList(QTableWidget):
 
             metadata = read_metadata(file_path)
 
+            track = ""
+            if metadata.track_number is not None:
+                track = str(metadata.track_number)
+
             self.setItem(
-            row,
-            1,
-            QTableWidgetItem(metadata.title),
+                row,
+                1,
+                QTableWidgetItem(track),
             )
 
             self.setItem(
                 row,
                 2,
-                QTableWidgetItem(metadata.artist),
+                QTableWidgetItem(metadata.title),
             )
 
             self.setItem(
                 row,
                 3,
+                QTableWidgetItem(metadata.artist),
+            )
+
+            self.setItem(
+                row,
+                4,
                 QTableWidgetItem(metadata.album),
+            )
+
+            self.setItem(
+                row,
+                5,
+                QTableWidgetItem(metadata.series),
+            )
+
+            self.setItem(
+                row,
+                6,
+                QTableWidgetItem(metadata.series_number),
+            )
+
+            self.setItem(
+                row,
+                7,
+                QTableWidgetItem(metadata.narrator),
             )
 
             self.item(row, 0).setData(
