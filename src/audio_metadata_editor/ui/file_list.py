@@ -1,6 +1,7 @@
 from pathlib import Path
 
-from PySide6.QtCore import QSignalBlocker, Signal
+from PySide6.QtCore import QSignalBlocker, Signal, QUrl
+from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import QHeaderView, QTableWidget, QTableWidgetItem
 
 from ..metadata.reader import read_metadata
@@ -53,6 +54,7 @@ class FileList(QTableWidget):
         header.setSectionResizeMode(7, QHeaderView.ResizeMode.Interactive)    
 
         self.itemSelectionChanged.connect(self._selection_changed)
+        self.itemDoubleClicked.connect(self._item_double_clicked)
 
     def load_directory(self, directory: Path):
         self.setRowCount(0)
@@ -148,6 +150,40 @@ class FileList(QTableWidget):
         if path:
             self.file_selected.emit(path)
 
+    def update_file_metadata(self, path, metadata):
+        for row in range(self.rowCount()):
+            item = self.item(row, 0)
+
+            if item is None:
+                continue
+
+            if item.data(256) != str(path):
+                continue
+
+            track = ""
+            if metadata.track_number is not None:
+                track = str(metadata.track_number)
+
+            self.item(row, 1).setText(track)
+            self.item(row, 2).setText(metadata.title)
+            self.item(row, 3).setText(metadata.artist)
+            self.item(row, 4).setText(metadata.album)
+            self.item(row, 5).setText(metadata.series)
+            self.item(row, 6).setText(metadata.series_number)
+            self.item(row, 7).setText(metadata.narrator)
+
+            return
+
+    def _item_double_clicked(self, item, column):
+        path = item.data(256)
+
+        if not path:
+            return
+
+        QDesktopServices.openUrl(
+            QUrl.fromLocalFile(path)
+        )
+
     def select_file(self, path):
         for row in range(self.rowCount()):
             item = self.item(row, 0)
@@ -160,3 +196,4 @@ class FileList(QTableWidget):
                     self.clearSelection()
                     self.selectRow(row)
                 return
+
