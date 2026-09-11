@@ -36,6 +36,8 @@ class MainWindow(QMainWindow):
         self.root_path = None
         self.current_file = None
         self.current_metadata = None
+        self.pending_artwork = None
+        self.pending_artwork_mime = ""
 
         self._create_toolbar()
         self._create_main_layout()
@@ -94,6 +96,15 @@ class MainWindow(QMainWindow):
         )
 
         metadata_layout.addWidget(self.artwork_label)
+        
+        self.choose_artwork_button = QPushButton("Choose Artwork")
+        self.remove_artwork_button = QPushButton("Remove Artwork")
+
+        metadata_layout.addWidget(self.choose_artwork_button)
+        metadata_layout.addWidget(self.remove_artwork_button)
+
+        self.choose_artwork_button.clicked.connect(self._choose_artwork)
+        self.remove_artwork_button.clicked.connect(self._remove_artwork)
 
         form = QFormLayout()
 
@@ -285,6 +296,8 @@ class MainWindow(QMainWindow):
 
         metadata = read_metadata(new_file)
         self.current_metadata = metadata
+        self.pending_artwork = metadata.artwork
+        self.pending_artwork_mime = metadata.artwork_mime
 
         if metadata.artwork:
             image = QImage.fromData(metadata.artwork)
@@ -381,8 +394,9 @@ class MainWindow(QMainWindow):
             id3v1_comment=self.id3v1_comment_edit.text(),
             copyright=self.copyright_edit.text(),
             description=self.description_edit.toPlainText(),
+            artwork=self.pending_artwork,
+            artwork_mime=self.pending_artwork_mime,
         )
-
     def _save_changes(self):
         if self.current_file is None:
             QMessageBox.warning(
@@ -406,9 +420,19 @@ class MainWindow(QMainWindow):
 
         try:
             if suffix == ".mp3":
-                write_mp3_metadata(self.current_file, metadata)
+                write_mp3_metadata(
+                    self.current_file,
+                    metadata,
+                    self.pending_artwork,
+                    self.pending_artwork_mime,
+                )
             elif suffix == ".m4b":
-                write_m4b_metadata(self.current_file, metadata)
+                write_m4b_metadata(
+                    self.current_file,
+                    metadata,
+                    self.pending_artwork,
+                    self.pending_artwork_mime,
+                )
             else:
                 QMessageBox.warning(
                     self,
@@ -425,6 +449,11 @@ class MainWindow(QMainWindow):
             return
 
         self.current_metadata = metadata
+
+        self.file_list.update_file_metadata(
+            self.current_file,
+            metadata,
+        )
 
         QMessageBox.information(
             self,
@@ -459,6 +488,8 @@ class MainWindow(QMainWindow):
             or edited.narrator != loaded.narrator
             or edited.series != loaded.series
             or edited.series_number != loaded.series_number
+            or self.pending_artwork != loaded.artwork
+            or self.pending_artwork_mime != loaded.artwork_mime
         )
 
     def closeEvent(self, event):
@@ -490,4 +521,55 @@ class MainWindow(QMainWindow):
             event.accept()
 
         else:
-            event.ignore()        
+            event.ignore()   
+
+    def _choose_artwork(self):
+        path, _ = QFileDialog.getOpenFileName(
+            self,
+            "Select Artwork",
+            "",
+            "Images (*.jpg *.jpeg *.png)",
+        )
+
+        if not path:
+            return
+
+        with open(path, "rb") as file:
+            artwork = file.read()
+
+        image = QImage.fromData(artwork)
+
+        if image.isNull():
+            QMessageBox.warning(
+                self,
+                "Invalid Artwork",
+                "The selected file is not a valid image.",
+            )
+            return
+
+        self.pending_artwork = artwork
+
+        if path.lower().endswith(".png"):
+            self.pending_artwork_mime = "image/png"
+        else:
+            self.pending_artwork_mime = "image/jpeg"
+
+        pixmap = QPixmap.fromImage(image)
+
+        self.artwork_label.setPixmap(
+            pixmap.scaled(
+                self.artwork_label.size(),
+                Qt.AspectRatioMode.KeepAspectRatio,
+                Qt.TransformationMode.SmoothTransformation,
+            )
+        )
+
+
+    def _remove_artwork(self):
+        if self.current_metadata is None:
+            return
+
+        self.pending_artwork = None
+        self.pending_artwork_mime = ""
+
+        self.artwork_label.clear()

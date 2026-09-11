@@ -1,6 +1,7 @@
 from pathlib import Path
 
-from mutagen.mp4 import MP4
+from mutagen.mp4 import MP4, MP4Cover
+from mutagen.mp4 import AtomDataType
 
 from .model import Metadata
 
@@ -109,7 +110,14 @@ def read_m4b_metadata(path: Path) -> Metadata:
         artwork_mime=artwork_mime,
     )
 
-def write_m4b_metadata(path: Path, metadata: Metadata) -> None:
+_ARTWORK_UNCHANGED = object()
+
+def write_m4b_metadata(
+    path: Path,
+    metadata: Metadata,
+    artwork=_ARTWORK_UNCHANGED,
+    artwork_mime: str = "",
+) -> None:
     audio = MP4(path)
 
     if audio.tags is None:
@@ -158,5 +166,22 @@ def write_m4b_metadata(path: Path, metadata: Metadata) -> None:
         tags["disk"] = [(metadata.disc_number, disc_total)]
     else:
         tags.pop("disk", None)
+
+    if artwork is not _ARTWORK_UNCHANGED:
+        if artwork:
+            if artwork_mime == "image/png":
+                cover = MP4Cover(
+                    artwork,
+                    imageformat=14,
+                )
+            else:
+                cover = MP4Cover(
+                    artwork,
+                    imageformat=13,
+                )
+
+            audio["covr"] = [cover]
+        else:
+            audio.pop("covr", None)
 
     audio.save()

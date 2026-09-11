@@ -21,6 +21,7 @@ from mutagen.id3 import (
 
 from .model import Metadata
 
+_ARTWORK_UNCHANGED = object()
 
 def _get_text(tags, frame_id: str) -> str:
     frame = tags.get(frame_id)
@@ -121,7 +122,12 @@ def read_mp3_metadata(path: Path) -> Metadata:
         artwork_mime=artwork_mime,
     )
 
-def write_mp3_metadata(path: Path, metadata: Metadata) -> None:
+def write_mp3_metadata(
+    path: Path,
+    metadata: Metadata,
+    artwork=_ARTWORK_UNCHANGED,
+    artwork_mime: str = "",
+) -> None:
     tags = ID3(path)
 
     def set_text(frame_id: str, frame_class, value: str) -> None:
@@ -228,6 +234,21 @@ def write_mp3_metadata(path: Path, metadata: Metadata) -> None:
     set_txxx("Series", metadata.series)
     set_txxx("Series Number", metadata.series_number)
 
-    # Do not touch APIC/artwork or any other unknown frames.
+    if artwork is not _ARTWORK_UNCHANGED:
+        tags.delall("APIC")
+
+        if artwork:
+            mime = artwork_mime or "image/jpeg"
+
+            tags.add(
+                APIC(
+                    encoding=3,
+                    mime=mime,
+                    type=3,
+                    desc="Cover",
+                    data=artwork,
+                )
+            )
+
     tags.save(path)
 
