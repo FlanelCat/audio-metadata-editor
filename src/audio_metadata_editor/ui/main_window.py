@@ -35,9 +35,12 @@ class MainWindow(QMainWindow):
 
         self.root_path = None
         self.current_file = None
+        self.selected_files = []
+        self.multi_edit_fields = set()
         self.current_metadata = None
         self.pending_artwork = None
         self.pending_artwork_mime = ""
+        self.multi_edit_artwork = False
 
         self._create_toolbar()
         self._create_main_layout()
@@ -77,6 +80,7 @@ class MainWindow(QMainWindow):
         # File list
         self.file_list = FileList()
         self.file_list.file_selected.connect(self._file_selected)
+        self.file_list.files_selected.connect(self._files_selected)
         splitter.addWidget(self.file_list)
 
         # Metadata panel
@@ -157,6 +161,25 @@ class MainWindow(QMainWindow):
         splitter.setSizes([250, 600, 350])
 
         self.setCentralWidget(splitter)
+        self._connect_multi_edit_tracking()
+
+    def _files_selected(self, paths):
+        if len(paths) <= 1:
+            self.statusBar().clearMessage()
+            return
+
+        self.selected_files = paths
+
+        metadatas = [
+            read_metadata(Path(path))
+            for path in paths
+        ]
+
+        self.statusBar().showMessage(
+            f"{len(paths)} files selected"
+        )
+
+        self._show_common_metadata(metadatas)
 
     def _create_status_bar(self):
         self.status_label = QLabel("No folder selected")
@@ -266,16 +289,34 @@ class MainWindow(QMainWindow):
             self._populate_root()
 
     def _file_selected(self, path):
-        new_file = Path(path)
+        previous_selection = self.selected_files.copy()
 
-        if self.current_file is not None and new_file != self.current_file:
+        new_file = Path(path)
+        if (
+            self.current_file is not None
+            and new_file != self.current_file
+        ):
             if self._has_unsaved_changes():
+                if len(self.selected_files) > 1:
+                    field_names = self._multi_edit_field_names()
+
+                    message = (
+                        f"You have unsaved changes to "
+                        f"{len(self.selected_files)} selected files.\n\n"
+                        f"Fields to be changed: {', '.join(field_names)}.\n\n"
+                        "Do you want to save them before switching files?"
+                    )
+                else:
+                    message = (
+                        f"You have unsaved changes to:\n\n"
+                        f"{self.current_file.name}\n\n"
+                        "Do you want to save them before switching files?"
+                    )
+
                 reply = QMessageBox.question(
                     self,
                     "Unsaved Changes",
-                    f"You have unsaved changes to:\n\n"
-                    f"{self.current_file.name}\n\n"
-                    "Do you want to save them before switching files?",
+                    message,                    
                     QMessageBox.StandardButton.Save
                     | QMessageBox.StandardButton.Discard
                     | QMessageBox.StandardButton.Cancel,
@@ -287,17 +328,45 @@ class MainWindow(QMainWindow):
 
                     if self._has_unsaved_changes():
                         return
-
+                        
                 elif reply == QMessageBox.StandardButton.Cancel:
-                    self.file_list.select_file(self.current_file)
+                    self.file_list.select_files(previous_selection)
+                    self.selected_files = previous_selection.copy()
                     return
 
+        self.selected_files = [path]
         self.current_file = new_file
 
         metadata = read_metadata(new_file)
         self.current_metadata = metadata
         self.pending_artwork = metadata.artwork
         self.pending_artwork_mime = metadata.artwork_mime
+
+        self.multi_edit_fields.clear()
+        self.multi_edit_artwork = False
+
+        for widget in (
+            self.title_edit,
+            self.artist_edit,
+            self.album_edit,
+            self.album_artist_edit,
+            self.genre_edit,
+            self.track_edit,
+            self.track_total_edit,
+            self.disc_edit,
+            self.disc_total_edit,
+            self.narrator_edit,
+            self.series_edit,
+            self.series_number_edit,
+            self.publisher_edit,
+            self.date_edit,
+            self.composer_edit,
+            self.comment_edit,
+            self.id3v1_comment_edit,
+            self.copyright_edit,
+            self.description_edit,
+        ):
+            widget.setPlaceholderText("")
 
         if metadata.artwork:
             image = QImage.fromData(metadata.artwork)
@@ -397,28 +466,114 @@ class MainWindow(QMainWindow):
             artwork=self.pending_artwork,
             artwork_mime=self.pending_artwork_mime,
         )
+
     def _save_changes(self):
+        if not self._validate_numeric_fields():
+            return
+
+        if not self.selected_files:
+            QMessageBox.warning(
+                self,
+                "No Files Selected",
+                "No files are selected.",
+            )
+            return
+
+        # Multi-file editing
+        if len(self.selected_files) > 1:
+            if not self.multi_edit_fields and not self.multi_edit_artwork:
+                QMessageBox.information(
+                    self,
+                    "No Changes",
+                    "No metadata fields or artwork have been changed.",
+                )
+                return
+
+            edited_metadata = self._get_edited_metadata()
+
+            try:
+                for path_string in self.selected_files:
+                    path = Path(path_string)
+
+                    metadata = read_metadata(path)
+
+                    for field in self.multi_edit_fields:
+                        setattr(
+                            metadata,
+                            field,
+                            getattr(edited_metadata, field),
+                        )
+
+                    if self.multi_edit_artwork:
+                        artwork = self.pending_artwork
+                        artwork_mime = self.pending_artwork_mime
+                    else:
+                        artwork = metadata.artwork
+                        artwork_mime = metadata.artwork_mime
+
+                    suffix = path.suffix.lower()
+
+                    if suffix == ".mp3":
+                        write_mp3_metadata(
+                            path,
+                            metadata,
+                            artwork,
+                            artwork_mime,
+                        )
+                    elif suffix == ".m4b":
+                        write_m4b_metadata(
+                            path,
+                            metadata,
+                            artwork,
+                            artwork_mime,
+                        )
+
+                    self.file_list.update_file_metadata(
+                        path,
+                        metadata,
+                    )
+
+            except Exception as exc:
+                QMessageBox.critical(
+                    self,
+                    "Save Failed",
+                    f"Could not save the selected files:\n\n{exc}",
+                )
+                return
+
+            self.multi_edit_fields.clear()
+            self.multi_edit_artwork = False
+
+            QMessageBox.information(
+                self,
+                "Saved",
+                f"Saved changes to {len(self.selected_files)} files.",
+            )
+
+            # Refresh the multi-file display.
+            metadatas = [
+                read_metadata(Path(path))
+                for path in self.selected_files
+            ]
+
+            self._show_common_metadata(metadatas)
+
+            return
+
+        # Single-file editing
         if self.current_file is None:
             QMessageBox.warning(
                 self,
                 "No File Selected",
-                "Please select a file before saving.",
-            )
-            return
-
-        if not self._has_unsaved_changes():
-            QMessageBox.information(
-                self,
-                "No Changes",
-                "There are no changes to save.",
+                "No file is selected.",
             )
             return
 
         metadata = self._get_edited_metadata()
 
-        suffix = self.current_file.suffix.lower()
-
         try:
+            suffix = self.current_file.suffix.lower()
+
             if suffix == ".mp3":
                 write_mp3_metadata(
                     self.current_file,
@@ -426,6 +581,7 @@ class MainWindow(QMainWindow):
                     self.pending_artwork,
                     self.pending_artwork_mime,
                 )
+
             elif suffix == ".m4b":
                 write_m4b_metadata(
                     self.current_file,
@@ -433,13 +589,12 @@ class MainWindow(QMainWindow):
                     self.pending_artwork,
                     self.pending_artwork_mime,
                 )
+
             else:
-                QMessageBox.warning(
-                    self,
-                    "Unsupported File",
-                    f"Writing {suffix} is not supported.",
+                raise ValueError(
+                    f"Unsupported file type: {self.current_file.suffix}"
                 )
-                return
+
         except Exception as exc:
             QMessageBox.critical(
                 self,
@@ -458,10 +613,16 @@ class MainWindow(QMainWindow):
         QMessageBox.information(
             self,
             "Saved",
-            f"Metadata saved successfully:\n\n{self.current_file.name}",
+            f"Saved changes to {self.current_file.name}.",
         )
 
     def _has_unsaved_changes(self):
+        if len(self.selected_files) > 1:
+            return bool(
+                self.multi_edit_fields
+                or self.multi_edit_artwork
+            )
+
         if self.current_metadata is None:
             return False
 
@@ -554,6 +715,9 @@ class MainWindow(QMainWindow):
         else:
             self.pending_artwork_mime = "image/jpeg"
 
+        if len(self.selected_files) > 1:
+            self.multi_edit_artwork = True
+
         pixmap = QPixmap.fromImage(image)
 
         self.artwork_label.setPixmap(
@@ -564,7 +728,6 @@ class MainWindow(QMainWindow):
             )
         )
 
-
     def _remove_artwork(self):
         if self.current_metadata is None:
             return
@@ -572,4 +735,185 @@ class MainWindow(QMainWindow):
         self.pending_artwork = None
         self.pending_artwork_mime = ""
 
+        if len(self.selected_files) > 1:
+            self.multi_edit_artwork = True
+
         self.artwork_label.clear()
+
+        if len(self.selected_files) > 1:
+            self.artwork_label.setText("No artwork")
+
+
+    def _common_metadata_value(self, metadatas, attribute):
+        if not metadatas:
+            return None, False
+
+        values = [
+            getattr(metadata, attribute)
+            for metadata in metadatas
+        ]
+
+        if all(value == values[0] for value in values):
+            return values[0], True
+
+        return None, False
+
+    def _show_common_metadata(self, metadatas):
+        self.multi_edit_fields.clear()
+
+        fields = {
+            "title": self.title_edit,
+            "artist": self.artist_edit,
+            "album": self.album_edit,
+            "album_artist": self.album_artist_edit,
+            "genre": self.genre_edit,
+            "track_number": self.track_edit,
+            "track_total": self.track_total_edit,
+            "disc_number": self.disc_edit,
+            "disc_total": self.disc_total_edit,
+            "narrator": self.narrator_edit,
+            "series": self.series_edit,
+            "series_number": self.series_number_edit,
+            "publisher": self.publisher_edit,
+            "date": self.date_edit,
+            "composer": self.composer_edit,
+            "comment": self.comment_edit,
+            "id3v1_comment": self.id3v1_comment_edit,
+            "copyright": self.copyright_edit,
+            "description": self.description_edit,
+        }
+
+        for field, widget in fields.items():
+            value, is_common = self._common_metadata_value(
+                metadatas,
+                field,
+            )
+
+            widget.blockSignals(True)
+
+            if is_common:
+                text = "" if value is None else str(value)
+
+                if isinstance(widget, QPlainTextEdit):
+                    widget.setPlainText(text)
+                else:
+                    widget.setText(text)
+
+                widget.setPlaceholderText("")
+            else:
+                if isinstance(widget, QPlainTextEdit):
+                    widget.setPlainText("")
+                else:
+                    widget.setText("")
+
+                widget.setPlaceholderText("<multiple values>")
+
+            widget.blockSignals(False)
+
+        self.artwork_label.clear()
+        self.artwork_label.setText("Multiple files selected")
+
+    def _connect_multi_edit_tracking(self):
+        fields = {
+            "title": self.title_edit,
+            "artist": self.artist_edit,
+            "album": self.album_edit,
+            "album_artist": self.album_artist_edit,
+            "genre": self.genre_edit,
+            "track_number": self.track_edit,
+            "track_total": self.track_total_edit,
+            "disc_number": self.disc_edit,
+            "disc_total": self.disc_total_edit,
+            "narrator": self.narrator_edit,
+            "series": self.series_edit,
+            "series_number": self.series_number_edit,
+            "publisher": self.publisher_edit,
+            "date": self.date_edit,
+            "composer": self.composer_edit,
+            "comment": self.comment_edit,
+            "id3v1_comment": self.id3v1_comment_edit,
+            "copyright": self.copyright_edit,
+            "description": self.description_edit,
+        }
+
+        for field, widget in fields.items():
+            if isinstance(widget, QPlainTextEdit):
+                widget.textChanged.connect(
+                    lambda field=field: self.multi_edit_fields.add(field)
+                )
+            else:
+                widget.textEdited.connect(
+                    lambda text, field=field: self.multi_edit_fields.add(field)
+                )
+
+    def _multi_edit_field_names(self):
+        names = {
+            "title": "Title",
+            "artist": "Artist",
+            "album": "Album",
+            "album_artist": "Album Artist",
+            "genre": "Genre",
+            "track_number": "Track",
+            "track_total": "Track Total",
+            "disc_number": "Disc",
+            "disc_total": "Disc Total",
+            "narrator": "Narrator",
+            "series": "Series",
+            "series_number": "Series Number",
+            "publisher": "Publisher",
+            "date": "Date",
+            "composer": "Composer",
+            "comment": "Comment",
+            "id3v1_comment": "ID3v1 Comment",
+            "copyright": "Copyright",
+            "description": "Description",
+        }
+
+        field_names = [
+            names[field]
+            for field in self.multi_edit_fields
+            if field in names
+        ]
+
+        if self.multi_edit_artwork:
+            field_names.append("Artwork")
+
+        return field_names
+
+    def _validate_numeric_fields(self):
+        fields = {
+            "Track": self.track_edit,
+            "Track Total": self.track_total_edit,
+            "Disc": self.disc_edit,
+            "Disc Total": self.disc_total_edit,
+        }
+
+        for name, widget in fields.items():
+            text = widget.text().strip()
+
+            if not text:
+                continue
+
+            try:
+                value = int(text)
+            except ValueError:
+                QMessageBox.warning(
+                    self,
+                    "Invalid Number",
+                    f"{name} must be a whole number.",
+                )
+                widget.setFocus()
+                widget.selectAll()
+                return False
+
+            if value < 0:
+                QMessageBox.warning(
+                    self,
+                    "Invalid Number",
+                    f"{name} cannot be negative.",
+                )
+                widget.setFocus()
+                widget.selectAll()
+                return False
+
+        return True

@@ -1,6 +1,11 @@
 from pathlib import Path
 
-from PySide6.QtCore import QSignalBlocker, Signal, QUrl
+from PySide6.QtCore import (
+    QItemSelectionModel,
+    QSignalBlocker,
+    Signal,
+    QUrl,
+)
 from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import QHeaderView, QTableWidget, QTableWidgetItem
 
@@ -11,6 +16,7 @@ AUDIO_EXTENSIONS = {".mp3", ".m4b"}
 
 class FileList(QTableWidget):
     file_selected = Signal(str)
+    files_selected = Signal(list)
 
     def __init__(self):
         super().__init__()
@@ -137,18 +143,26 @@ class FileList(QTableWidget):
     def _selection_changed(self):
         rows = self.selectionModel().selectedRows()
 
-        if not rows:
+        paths = []
+
+        for index in rows:
+            item = self.item(index.row(), 0)
+
+            if item is None:
+                continue
+
+            path = item.data(256)
+
+            if path:
+                paths.append(path)
+
+        if not paths:
             return
 
-        item = self.item(rows[0].row(), 0)
+        self.files_selected.emit(paths)
 
-        if item is None:
-            return
-
-        path = item.data(256)
-
-        if path:
-            self.file_selected.emit(path)
+        if len(paths) == 1:
+            self.file_selected.emit(paths[0])
 
     def update_file_metadata(self, path, metadata):
         for row in range(self.rowCount()):
@@ -197,3 +211,46 @@ class FileList(QTableWidget):
                     self.selectRow(row)
                 return
 
+    def select_files(self, paths):
+        paths = {str(path) for path in paths}
+
+        with QSignalBlocker(self):
+            self.clearSelection()
+
+            selection_model = self.selectionModel()
+
+            for row in range(self.rowCount()):
+                item = self.item(row, 0)
+
+                if item is None:
+                    continue
+
+                path = item.data(256)
+
+                if path not in paths:
+                    continue
+
+                index = self.model().index(row, 0)
+
+                selection_model.select(
+                    index,
+                    QItemSelectionModel.SelectionFlag.Select
+                    | QItemSelectionModel.SelectionFlag.Rows,
+                )
+
+        rows = self.selectionModel().selectedRows()
+
+        restored_paths = []
+
+        for index in rows:
+            item = self.item(index.row(), 0)
+
+            if item is None:
+                continue
+
+            path = item.data(256)
+
+            if path:
+                restored_paths.append(path)
+
+        self.files_selected.emit(restored_paths)
