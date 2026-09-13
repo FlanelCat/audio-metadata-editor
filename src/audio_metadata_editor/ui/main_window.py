@@ -760,6 +760,7 @@ class MainWindow(QMainWindow):
 
     def _show_common_metadata(self, metadatas):
         self.multi_edit_fields.clear()
+        self._update_multi_edit_visuals()
 
         fields = {
             "title": self.title_edit,
@@ -839,12 +840,53 @@ class MainWindow(QMainWindow):
         for field, widget in fields.items():
             if isinstance(widget, QPlainTextEdit):
                 widget.textChanged.connect(
-                    lambda field=field: self.multi_edit_fields.add(field)
+                    lambda field=field: (
+                        self.multi_edit_fields.add(field),
+                        self._update_multi_edit_visuals(),
+                    )
+                    if len(self.selected_files) > 1
+                    else None
                 )
             else:
                 widget.textEdited.connect(
-                    lambda text, field=field: self.multi_edit_fields.add(field)
+                    lambda text, field=field: (
+                        self.multi_edit_fields.add(field),
+                        self._update_multi_edit_visuals(),
+                    )
+                    if len(self.selected_files) > 1
+                    else None
                 )
+
+    def _update_multi_edit_visuals(self):
+        fields = {
+            "title": self.title_edit,
+            "artist": self.artist_edit,
+            "album": self.album_edit,
+            "album_artist": self.album_artist_edit,
+            "genre": self.genre_edit,
+            "track_number": self.track_edit,
+            "track_total": self.track_total_edit,
+            "disc_number": self.disc_edit,
+            "disc_total": self.disc_total_edit,
+            "narrator": self.narrator_edit,
+            "series": self.series_edit,
+            "series_number": self.series_number_edit,
+            "publisher": self.publisher_edit,
+            "date": self.date_edit,
+            "composer": self.composer_edit,
+            "comment": self.comment_edit,
+            "id3v1_comment": self.id3v1_comment_edit,
+            "copyright": self.copyright_edit,
+            "description": self.description_edit,
+        }
+
+        for field, widget in fields.items():
+            if field in self.multi_edit_fields:
+                widget.setStyleSheet(
+                    "background-color: #fff3cd; color: black;"
+                )
+            else:
+                widget.setStyleSheet("")
 
     def _multi_edit_field_names(self):
         names = {
