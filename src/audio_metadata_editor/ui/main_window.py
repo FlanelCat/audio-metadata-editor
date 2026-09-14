@@ -1052,6 +1052,30 @@ class MainWindow(QMainWindow):
         checkboxes["artwork"] = artwork_checkbox
         layout.addWidget(artwork_checkbox)
 
+        selection_layout = QHBoxLayout()
+
+        select_all_button = QPushButton("Select All")
+        clear_all_button = QPushButton("Clear All")
+
+        selection_layout.addWidget(select_all_button)
+        selection_layout.addWidget(clear_all_button)
+
+        layout.addLayout(selection_layout)
+
+        select_all_button.clicked.connect(
+            lambda: [
+                checkbox.setChecked(True)
+                for checkbox in checkboxes.values()
+            ]
+        )
+
+        clear_all_button.clicked.connect(
+            lambda: [
+                checkbox.setChecked(False)
+                for checkbox in checkboxes.values()
+            ]
+        )
+
         button_layout = QHBoxLayout()
 
         cancel_button = QPushButton("Cancel")
