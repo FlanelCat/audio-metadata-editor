@@ -3,8 +3,11 @@ from pathlib import Path
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QImage, QPixmap
 from PySide6.QtWidgets import (
+    QCheckBox,
+    QDialog,
     QFileDialog,
     QFormLayout,
+    QHBoxLayout,
     QLabel,
     QLineEdit,
     QMainWindow,
@@ -41,6 +44,7 @@ class MainWindow(QMainWindow):
         self.pending_artwork = None
         self.pending_artwork_mime = ""
         self.multi_edit_artwork = False
+        self.metadata_clipboard = None
 
         self._create_toolbar()
         self._create_main_layout()
@@ -59,12 +63,20 @@ class MainWindow(QMainWindow):
         save_button = QPushButton("Save Changes")
         save_button.clicked.connect(self._save_changes)
 
+        copy_button = QPushButton("Copy Metadata")
+        copy_button.clicked.connect(self._copy_metadata)
+
+        paste_button = QPushButton("Paste Metadata")
+        paste_button.clicked.connect(self._paste_metadata)
+
         toolbar.addWidget(open_button)
         toolbar.addWidget(refresh_button)
 
         toolbar.addSeparator()
 
         toolbar.addWidget(save_button)
+        toolbar.addWidget(copy_button)
+        toolbar.addWidget(paste_button)
 
     def _create_main_layout(self):
         splitter = QSplitter()
@@ -344,6 +356,7 @@ class MainWindow(QMainWindow):
 
         self.multi_edit_fields.clear()
         self.multi_edit_artwork = False
+        self._update_multi_edit_visuals()
 
         for widget in (
             self.title_edit,
@@ -959,3 +972,192 @@ class MainWindow(QMainWindow):
                 return False
 
         return True
+
+    def _copy_metadata(self):
+        if len(self.selected_files) != 1:
+            QMessageBox.information(
+                self,
+                "Copy Metadata",
+                "Select exactly one file to copy metadata from.",
+            )
+            return
+
+        self.metadata_clipboard = read_metadata(
+            Path(self.selected_files[0])
+        )
+
+        self.statusBar().showMessage(
+            f"Metadata copied from {Path(self.selected_files[0]).name}"
+        )
+
+    def _paste_metadata(self):
+        if self.metadata_clipboard is None:
+            QMessageBox.information(
+                self,
+                "Paste Metadata",
+                "No metadata has been copied.",
+            )
+            return
+
+        if not self.selected_files:
+            QMessageBox.information(
+                self,
+                "Paste Metadata",
+                "Select at least one target file.",
+            )
+            return
+
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Paste Metadata")
+        dialog.setModal(True)
+
+        layout = QVBoxLayout(dialog)
+
+        layout.addWidget(
+            QLabel(
+                "Select the fields to paste into the selected files:"
+            )
+        )
+
+        fields = {
+            "title": "Title",
+            "artist": "Artist",
+            "album": "Album",
+            "album_artist": "Album Artist",
+            "genre": "Genre",
+            "track_number": "Track",
+            "track_total": "Track Total",
+            "disc_number": "Disc",
+            "disc_total": "Disc Total",
+            "narrator": "Narrator",
+            "series": "Series",
+            "series_number": "Series Number",
+            "publisher": "Publisher",
+            "date": "Date",
+            "composer": "Composer",
+            "comment": "Comment",
+            "id3v1_comment": "ID3v1 Comment",
+            "copyright": "Copyright",
+            "description": "Description",
+        }
+
+        checkboxes = {}
+
+        for field, label in fields.items():
+            checkbox = QCheckBox(label)
+            checkboxes[field] = checkbox
+            layout.addWidget(checkbox)
+
+        artwork_checkbox = QCheckBox("Artwork")
+        checkboxes["artwork"] = artwork_checkbox
+        layout.addWidget(artwork_checkbox)
+
+        button_layout = QHBoxLayout()
+
+        cancel_button = QPushButton("Cancel")
+        paste_button = QPushButton("Paste")
+
+        button_layout.addWidget(cancel_button)
+        button_layout.addWidget(paste_button)
+
+        layout.addLayout(button_layout)
+
+        cancel_button.clicked.connect(dialog.reject)
+        paste_button.clicked.connect(dialog.accept)
+
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            return
+
+        selected_fields = {
+            field
+            for field, checkbox in checkboxes.items()
+            if checkbox.isChecked()
+        }
+
+        if not selected_fields:
+            QMessageBox.information(
+                self,
+                "Paste Metadata",
+                "No fields were selected.",
+            )
+            return
+
+        if "artwork" in selected_fields:
+            self.pending_artwork = self.metadata_clipboard.artwork
+            self.pending_artwork_mime = (
+                self.metadata_clipboard.artwork_mime
+            )
+            self.multi_edit_artwork = True
+
+            selected_fields.remove("artwork")
+
+        self.multi_edit_fields.update(selected_fields)
+
+        self._show_pasted_metadata(selected_fields)
+
+        for path_string in self.selected_files:
+            path = Path(path_string)
+            metadata = read_metadata(path)
+
+            for field in selected_fields:
+                setattr(
+                    metadata,
+                    field,
+                    getattr(self.metadata_clipboard, field),
+                )
+
+            self.file_list.update_file_metadata(
+                path,
+                metadata,
+            )
+
+        self._update_multi_edit_visuals()
+
+    def _show_pasted_metadata(self, selected_fields):
+        fields = {
+            "title": self.title_edit,
+            "artist": self.artist_edit,
+            "album": self.album_edit,
+            "album_artist": self.album_artist_edit,
+            "genre": self.genre_edit,
+            "track_number": self.track_edit,
+            "track_total": self.track_total_edit,
+            "disc_number": self.disc_edit,
+            "disc_total": self.disc_total_edit,
+            "narrator": self.narrator_edit,
+            "series": self.series_edit,
+            "series_number": self.series_number_edit,
+            "publisher": self.publisher_edit,
+            "date": self.date_edit,
+            "composer": self.composer_edit,
+            "comment": self.comment_edit,
+            "id3v1_comment": self.id3v1_comment_edit,
+            "copyright": self.copyright_edit,
+            "description": self.description_edit,
+        }
+
+        for field in selected_fields:
+            widget = fields.get(field)
+
+            if widget is None:
+                continue
+
+            value = getattr(
+                self.metadata_clipboard,
+                field,
+            )
+
+            widget.blockSignals(True)
+
+            widget.setPlaceholderText("")
+
+            if isinstance(widget, QPlainTextEdit):
+                widget.setPlainText(
+                    "" if value is None else str(value)
+                )
+            else:
+                widget.setText(
+                    "" if value is None else str(value)
+                )
+
+            widget.blockSignals(False)
