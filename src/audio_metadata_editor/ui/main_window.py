@@ -1,7 +1,15 @@
 from pathlib import Path
 
-from PySide6.QtCore import Qt
-from PySide6.QtGui import QImage, QPixmap
+from PySide6.QtCore import (
+    Qt,
+    QSignalBlocker,
+)
+from PySide6.QtGui import (
+    QImage,
+    QKeySequence,
+    QPixmap,
+    QShortcut,
+)
 from PySide6.QtWidgets import (
     QCheckBox,
     QDialog,
@@ -45,10 +53,12 @@ class MainWindow(QMainWindow):
         self.pending_artwork_mime = ""
         self.multi_edit_artwork = False
         self.metadata_clipboard = None
+        self.paste_metadata_fields = set()
 
         self._create_toolbar()
         self._create_main_layout()
         self._create_status_bar()
+        self._create_shortcuts()
 
     def _create_toolbar(self):
         toolbar = QToolBar("Main Toolbar")
@@ -63,6 +73,9 @@ class MainWindow(QMainWindow):
         save_button = QPushButton("Save Changes")
         save_button.clicked.connect(self._save_changes)
 
+        undo_button = QPushButton("Undo Changes")
+        undo_button.clicked.connect(self._undo_changes)
+
         copy_button = QPushButton("Copy Metadata")
         copy_button.clicked.connect(self._copy_metadata)
 
@@ -75,6 +88,7 @@ class MainWindow(QMainWindow):
         toolbar.addSeparator()
 
         toolbar.addWidget(save_button)
+        toolbar.addWidget(undo_button)
         toolbar.addWidget(copy_button)
         toolbar.addWidget(paste_button)
 
@@ -112,7 +126,7 @@ class MainWindow(QMainWindow):
         )
 
         metadata_layout.addWidget(self.artwork_label)
-        
+
         self.choose_artwork_button = QPushButton("Choose Artwork")
         self.remove_artwork_button = QPushButton("Remove Artwork")
 
@@ -132,7 +146,7 @@ class MainWindow(QMainWindow):
         self.track_edit = QLineEdit()
         self.track_total_edit = QLineEdit()
         self.disc_edit = QLineEdit()
-        self.disc_total_edit = QLineEdit()        
+        self.disc_total_edit = QLineEdit()
         self.narrator_edit = QLineEdit()
         self.series_edit = QLineEdit()
         self.series_number_edit = QLineEdit()
@@ -300,65 +314,8 @@ class MainWindow(QMainWindow):
         if self.root_path is not None:
             self._populate_root()
 
-    def _file_selected(self, path):
-        previous_selection = self.selected_files.copy()
-
-        new_file = Path(path)
-        if (
-            self.current_file is not None
-            and new_file != self.current_file
-        ):
-            if self._has_unsaved_changes():
-                if len(self.selected_files) > 1:
-                    field_names = self._multi_edit_field_names()
-
-                    message = (
-                        f"You have unsaved changes to "
-                        f"{len(self.selected_files)} selected files.\n\n"
-                        f"Fields to be changed: {', '.join(field_names)}.\n\n"
-                        "Do you want to save them before switching files?"
-                    )
-                else:
-                    message = (
-                        f"You have unsaved changes to:\n\n"
-                        f"{self.current_file.name}\n\n"
-                        "Do you want to save them before switching files?"
-                    )
-
-                reply = QMessageBox.question(
-                    self,
-                    "Unsaved Changes",
-                    message,                    
-                    QMessageBox.StandardButton.Save
-                    | QMessageBox.StandardButton.Discard
-                    | QMessageBox.StandardButton.Cancel,
-                    QMessageBox.StandardButton.Save,
-                )
-
-                if reply == QMessageBox.StandardButton.Save:
-                    self._save_changes()
-
-                    if self._has_unsaved_changes():
-                        return
-                        
-                elif reply == QMessageBox.StandardButton.Cancel:
-                    self.file_list.select_files(previous_selection)
-                    self.selected_files = previous_selection.copy()
-                    return
-
-        self.selected_files = [path]
-        self.current_file = new_file
-
-        metadata = read_metadata(new_file)
-        self.current_metadata = metadata
-        self.pending_artwork = metadata.artwork
-        self.pending_artwork_mime = metadata.artwork_mime
-
-        self.multi_edit_fields.clear()
-        self.multi_edit_artwork = False
-        self._update_multi_edit_visuals()
-
-        for widget in (
+    def _show_metadata(self, metadata):
+        widgets = (
             self.title_edit,
             self.artist_edit,
             self.album_edit,
@@ -378,7 +335,14 @@ class MainWindow(QMainWindow):
             self.id3v1_comment_edit,
             self.copyright_edit,
             self.description_edit,
-        ):
+        )
+
+        blockers = [
+            QSignalBlocker(widget)
+            for widget in widgets
+        ]
+
+        for widget in widgets:
             widget.setPlaceholderText("")
 
         if metadata.artwork:
@@ -436,11 +400,74 @@ class MainWindow(QMainWindow):
         self.composer_edit.setText(metadata.composer)
         self.comment_edit.setText(metadata.comment)
         self.id3v1_comment_edit.setText(metadata.id3v1_comment)
+
         self.id3v1_comment_edit.setEnabled(
-            self.current_file.suffix.lower() == ".mp3"
+            self.current_file is not None
+            and self.current_file.suffix.lower() == ".mp3"
         )
+
         self.copyright_edit.setText(metadata.copyright)
         self.description_edit.setPlainText(metadata.description)
+
+    def _file_selected(self, path):
+        previous_selection = self.selected_files.copy()
+
+        new_file = Path(path)
+        if (
+            self.current_file is not None
+            and new_file != self.current_file
+        ):
+            if self._has_unsaved_changes():
+                if len(self.selected_files) > 1:
+                    field_names = self._multi_edit_field_names()
+
+                    message = (
+                        f"You have unsaved changes to "
+                        f"{len(self.selected_files)} selected files.\n\n"
+                        f"Fields to be changed: {', '.join(field_names)}.\n\n"
+                        "Do you want to save them before switching files?"
+                    )
+                else:
+                    message = (
+                        f"You have unsaved changes to:\n\n"
+                        f"{self.current_file.name}\n\n"
+                        "Do you want to save them before switching files?"
+                    )
+
+                reply = QMessageBox.question(
+                    self,
+                    "Unsaved Changes",
+                    message,
+                    QMessageBox.StandardButton.Save
+                    | QMessageBox.StandardButton.Discard
+                    | QMessageBox.StandardButton.Cancel,
+                    QMessageBox.StandardButton.Save,
+                )
+
+                if reply == QMessageBox.StandardButton.Save:
+                    self._save_changes()
+
+                    if self._has_unsaved_changes():
+                        return
+
+                elif reply == QMessageBox.StandardButton.Cancel:
+                    self.file_list.select_files(previous_selection)
+                    self.selected_files = previous_selection.copy()
+                    return
+
+        self.selected_files = [path]
+        self.current_file = new_file
+
+        metadata = read_metadata(new_file)
+        self.current_metadata = metadata
+        self.pending_artwork = metadata.artwork
+        self.pending_artwork_mime = metadata.artwork_mime
+
+        self.multi_edit_fields.clear()
+        self.multi_edit_artwork = False
+        self._update_multi_edit_visuals()
+
+        self._show_metadata(metadata)
 
     def _get_edited_metadata(self):
         from audio_metadata_editor.metadata import Metadata
@@ -582,6 +609,14 @@ class MainWindow(QMainWindow):
             )
             return
 
+        if not self._has_unsaved_changes():
+            QMessageBox.information(
+                self,
+                "No Changes",
+                "No metadata fields or artwork have been changed.",
+            )
+            return
+
         metadata = self._get_edited_metadata()
 
         try:
@@ -666,6 +701,60 @@ class MainWindow(QMainWindow):
             or self.pending_artwork_mime != loaded.artwork_mime
         )
 
+    def _undo_changes(self):
+        if not self._has_unsaved_changes():
+            self.statusBar().showMessage("No Changes")
+            return
+
+        if len(self.selected_files) > 1:
+            metadatas = [
+                read_metadata(Path(path))
+                for path in self.selected_files
+            ]
+
+            self.multi_edit_fields.clear()
+            self.multi_edit_artwork = False
+            self.pending_artwork = None
+            self.pending_artwork_mime = ""
+
+            self._show_common_metadata(metadatas)
+
+            for path_string, metadata in zip(
+                self.selected_files,
+                metadatas,
+            ):
+                self.file_list.update_file_metadata(
+                    Path(path_string),
+                    metadata,
+                )
+
+            self._update_multi_edit_visuals()
+
+            self.statusBar().showMessage("Changes undone")
+            return
+
+        if len(self.selected_files) == 1:
+            path = Path(self.selected_files[0])
+
+            self.current_metadata = read_metadata(path)
+
+            self.multi_edit_fields.clear()
+            self.multi_edit_artwork = False
+
+            self.pending_artwork = self.current_metadata.artwork
+            self.pending_artwork_mime = self.current_metadata.artwork_mime
+
+            self._show_metadata(self.current_metadata)
+
+            self.file_list.update_file_metadata(
+                path,
+                self.current_metadata,
+            )
+
+            self._update_multi_edit_visuals()
+
+            self.statusBar().showMessage("Changes undone")
+
     def closeEvent(self, event):
         if not self._has_unsaved_changes():
             event.accept()
@@ -695,7 +784,7 @@ class MainWindow(QMainWindow):
             event.accept()
 
         else:
-            event.ignore()   
+            event.ignore()
 
     def _choose_artwork(self):
         path, _ = QFileDialog.getOpenFileName(
@@ -1045,10 +1134,16 @@ class MainWindow(QMainWindow):
 
         for field, label in fields.items():
             checkbox = QCheckBox(label)
+            checkbox.setChecked(
+                field in self.paste_metadata_fields
+            )
             checkboxes[field] = checkbox
             layout.addWidget(checkbox)
 
         artwork_checkbox = QCheckBox("Artwork")
+        artwork_checkbox.setChecked(
+            "artwork" in self.paste_metadata_fields
+        )
         checkboxes["artwork"] = artwork_checkbox
         layout.addWidget(artwork_checkbox)
 
@@ -1098,6 +1193,8 @@ class MainWindow(QMainWindow):
             if checkbox.isChecked()
         }
 
+        self.paste_metadata_fields = selected_fields.copy()
+
         if not selected_fields:
             QMessageBox.information(
                 self,
@@ -1111,11 +1208,13 @@ class MainWindow(QMainWindow):
             self.pending_artwork_mime = (
                 self.metadata_clipboard.artwork_mime
             )
-            self.multi_edit_artwork = True
+            if len(self.selected_files) > 1:
+                self.multi_edit_artwork = True
 
             selected_fields.remove("artwork")
 
-        self.multi_edit_fields.update(selected_fields)
+        if len(self.selected_files) > 1:
+            self.multi_edit_fields.update(selected_fields)
 
         self._show_pasted_metadata(selected_fields)
 
@@ -1185,3 +1284,46 @@ class MainWindow(QMainWindow):
                 )
 
             widget.blockSignals(False)
+
+    def _create_shortcuts(self):
+        QShortcut(
+            QKeySequence("Ctrl+S"),
+            self,
+        ).activated.connect(self._save_changes)
+
+        QShortcut(
+            QKeySequence("Ctrl+Shift+C"),
+            self,
+        ).activated.connect(self._copy_metadata)
+
+        QShortcut(
+            QKeySequence("Ctrl+Shift+V"),
+            self,
+        ).activated.connect(self._paste_metadata)
+
+        QShortcut(
+            QKeySequence("Delete"),
+            self,
+        ).activated.connect(self._remove_artwork)
+
+    def keyPressEvent(self, event):
+        if (
+            event.key() == Qt.Key.Key_Z
+            and event.modifiers() == Qt.KeyboardModifier.ControlModifier
+        ):
+            focused = self.focusWidget()
+
+            text_widgets = (
+                QLineEdit,
+                QPlainTextEdit,
+            )
+
+            if isinstance(focused, text_widgets):
+                super().keyPressEvent(event)
+                return
+
+            self._undo_changes()
+            event.accept()
+            return
+
+        super().keyPressEvent(event)
