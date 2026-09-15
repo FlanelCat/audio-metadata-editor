@@ -729,8 +729,6 @@ class MainWindow(QMainWindow):
                 )
 
             self._update_multi_edit_visuals()
-
-            self.statusBar().showMessage("Changes undone")
             return
 
         if len(self.selected_files) == 1:
@@ -909,7 +907,7 @@ class MainWindow(QMainWindow):
                 else:
                     widget.setText("")
 
-                widget.setPlaceholderText("<multiple values>")
+                widget.setPlaceholderText("<multiple values — edit to apply to all>")
 
             widget.blockSignals(False)
 
@@ -989,6 +987,20 @@ class MainWindow(QMainWindow):
                 )
             else:
                 widget.setStyleSheet("")
+
+        if len(self.selected_files) > 1:
+            field_count = len(self.multi_edit_fields)
+
+            if self.multi_edit_artwork:
+                field_count += 1
+
+            file_word = "file" if len(self.selected_files) == 1 else "files"
+            field_word = "field" if field_count == 1 else "fields"
+
+            self.statusBar().showMessage(
+                f"{len(self.selected_files)} {file_word} selected — "
+                f"{field_count} {field_word} will be changed"
+            )
 
     def _multi_edit_field_names(self):
         names = {
@@ -1301,11 +1313,6 @@ class MainWindow(QMainWindow):
             self,
         ).activated.connect(self._paste_metadata)
 
-        QShortcut(
-            QKeySequence("Delete"),
-            self,
-        ).activated.connect(self._remove_artwork)
-
     def keyPressEvent(self, event):
         if (
             event.key() == Qt.Key.Key_Z
@@ -1323,6 +1330,22 @@ class MainWindow(QMainWindow):
                 return
 
             self._undo_changes()
+            event.accept()
+            return
+
+        if event.key() == Qt.Key.Key_Delete:
+            focused = self.focusWidget()
+
+            text_widgets = (
+                QLineEdit,
+                QPlainTextEdit,
+            )
+
+            if isinstance(focused, text_widgets):
+                super().keyPressEvent(event)
+                return
+
+            self._remove_artwork()
             event.accept()
             return
 
