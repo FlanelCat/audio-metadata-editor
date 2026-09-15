@@ -815,9 +815,6 @@ class MainWindow(QMainWindow):
         else:
             self.pending_artwork_mime = "image/jpeg"
 
-        if len(self.selected_files) > 1:
-            self.multi_edit_artwork = True
-
         pixmap = QPixmap.fromImage(image)
 
         self.artwork_label.setPixmap(
@@ -828,6 +825,11 @@ class MainWindow(QMainWindow):
             )
         )
 
+        if len(self.selected_files) > 1:
+            self.multi_edit_artwork = True
+            self._update_multi_edit_visuals()
+
+
     def _remove_artwork(self):
         if self.current_metadata is None:
             return
@@ -837,12 +839,13 @@ class MainWindow(QMainWindow):
 
         if len(self.selected_files) > 1:
             self.multi_edit_artwork = True
-
+            self.artwork_label.clear()
+            self.artwork_label.setText(
+                "Artwork will be removed from all selected files"
+            )
+            self.artwork_label.clear()
+            return
         self.artwork_label.clear()
-
-        if len(self.selected_files) > 1:
-            self.artwork_label.setText("No artwork")
-
 
     def _common_metadata_value(self, metadatas, attribute):
         if not metadatas:
@@ -911,8 +914,20 @@ class MainWindow(QMainWindow):
 
             widget.blockSignals(False)
 
+        artwork_values = [
+            metadata.artwork
+            for metadata in metadatas
+        ]
+
+        if all(artwork is not None for artwork in artwork_values):
+            artwork_text = "Multiple artworks"
+        elif all(artwork is None for artwork in artwork_values):
+            artwork_text = "No artwork"
+        else:
+            artwork_text = "Mixed artwork"
+
         self.artwork_label.clear()
-        self.artwork_label.setText("Multiple files selected")
+        self.artwork_label.setText(artwork_text)
 
     def _connect_multi_edit_tracking(self):
         fields = {
