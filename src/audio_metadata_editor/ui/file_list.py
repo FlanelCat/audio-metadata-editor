@@ -5,6 +5,7 @@ from PySide6.QtCore import (
     QSignalBlocker,
     Signal,
     QUrl,
+    Qt,
 )
 from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import QHeaderView, QTableWidget, QTableWidgetItem
@@ -13,6 +14,38 @@ from ..metadata.reader import read_metadata
 
 AUDIO_EXTENSIONS = {".mp3", ".m4b"}
 
+class SortableTableWidgetItem(QTableWidgetItem):
+    def __lt__(self, other):
+        column = self.column()
+
+        if column in (1, 6):
+            left = self.text().strip()
+            right = other.text().strip()
+
+            left_empty = not left
+            right_empty = not right
+
+            if left_empty or right_empty:
+                if left_empty and right_empty:
+                    return False
+
+                order = (
+                    self.tableWidget()
+                    .horizontalHeader()
+                    .sortIndicatorOrder()
+                )
+
+                if order == Qt.SortOrder.AscendingOrder:
+                    return not left_empty
+
+                return left_empty
+
+            try:
+                return float(left) < float(right)
+            except ValueError:
+                return left.casefold() < right.casefold()
+
+        return self.text().casefold() < other.text().casefold()
 
 class FileList(QTableWidget):
     file_selected = Signal(str)
@@ -34,6 +67,9 @@ class FileList(QTableWidget):
                 "Narrator",
             ]
         )
+
+        self.setSortingEnabled(True)
+        self.horizontalHeader().setSortIndicatorShown(True)
 
         self.setSelectionBehavior(
             QTableWidget.SelectionBehavior.SelectRows
@@ -84,7 +120,7 @@ class FileList(QTableWidget):
             self.setItem(
                 row,
                 0,
-                QTableWidgetItem(file_path.name),
+                SortableTableWidgetItem(file_path.name),
             )
 
             metadata = read_metadata(file_path)
@@ -96,43 +132,43 @@ class FileList(QTableWidget):
             self.setItem(
                 row,
                 1,
-                QTableWidgetItem(track),
+                SortableTableWidgetItem(track),
             )
 
             self.setItem(
                 row,
                 2,
-                QTableWidgetItem(metadata.title),
+                SortableTableWidgetItem(metadata.title),
             )
 
             self.setItem(
                 row,
                 3,
-                QTableWidgetItem(metadata.artist),
+                SortableTableWidgetItem(metadata.artist),
             )
 
             self.setItem(
                 row,
                 4,
-                QTableWidgetItem(metadata.album),
+                SortableTableWidgetItem(metadata.album),
             )
 
             self.setItem(
                 row,
                 5,
-                QTableWidgetItem(metadata.series),
+                SortableTableWidgetItem(metadata.series),
             )
 
             self.setItem(
                 row,
                 6,
-                QTableWidgetItem(metadata.series_number),
+                SortableTableWidgetItem(metadata.series_number),
             )
 
             self.setItem(
                 row,
                 7,
-                QTableWidgetItem(metadata.narrator),
+                SortableTableWidgetItem(metadata.narrator),
             )
 
             self.item(row, 0).setData(
