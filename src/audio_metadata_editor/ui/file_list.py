@@ -50,6 +50,7 @@ class SortableTableWidgetItem(QTableWidgetItem):
 class FileList(QTableWidget):
     file_selected = Signal(str)
     files_selected = Signal(list)
+    metadata_cell_edited = Signal(str, int, str)
 
     def __init__(self):
         super().__init__()
@@ -80,7 +81,7 @@ class FileList(QTableWidget):
         )
 
         self.setEditTriggers(
-            QTableWidget.EditTrigger.NoEditTriggers
+            QTableWidget.EditTrigger.DoubleClicked
         )
 
         header = self.horizontalHeader()
@@ -97,6 +98,8 @@ class FileList(QTableWidget):
 
         self.itemSelectionChanged.connect(self._selection_changed)
         self.itemDoubleClicked.connect(self._item_double_clicked)
+        self.itemChanged.connect(self._item_changed)
+        self._editing_previous_value = ""
 
     def load_directory(self, directory: Path):
         self.setRowCount(0)
@@ -176,6 +179,15 @@ class FileList(QTableWidget):
                 str(file_path),
             )
 
+            for column in range(1, self.columnCount()):
+                item = self.item(row, column)
+
+                if item is not None:
+                    item.setFlags(
+                        item.flags()
+                        | Qt.ItemFlag.ItemIsEditable
+                    )
+
     def _selection_changed(self):
         rows = self.selectionModel().selectedRows()
 
@@ -214,25 +226,75 @@ class FileList(QTableWidget):
             if metadata.track_number is not None:
                 track = str(metadata.track_number)
 
-            self.item(row, 1).setText(track)
-            self.item(row, 2).setText(metadata.title)
-            self.item(row, 3).setText(metadata.artist)
-            self.item(row, 4).setText(metadata.album)
-            self.item(row, 5).setText(metadata.series)
-            self.item(row, 6).setText(metadata.series_number)
-            self.item(row, 7).setText(metadata.narrator)
+            with QSignalBlocker(self):
+                self.item(row, 1).setText(track)
+                self.item(row, 2).setText(metadata.title)
+                self.item(row, 3).setText(metadata.artist)
+                self.item(row, 4).setText(metadata.album)
+                self.item(row, 5).setText(metadata.series)
+                self.item(row, 6).setText(metadata.series_number)
+                self.item(row, 7).setText(metadata.narrator)
 
             return
 
-    def _item_double_clicked(self, item, column):
-        path = item.data(256)
+    def _item_changed(self, item):
+        column = item.column()
 
+        if column == 0:
+            return
+
+        filename_item = self.item(item.row(), 0)
+        if filename_item is None:
+            return
+
+        path = filename_item.data(256)
         if not path:
             return
 
-        QDesktopServices.openUrl(
-            QUrl.fromLocalFile(path)
+        value = item.text().strip()
+
+        # Track number must be a positive integer.
+        if column == 1 and value:
+            try:
+                number = int(value)
+                if number < 1:
+                    raise ValueError
+            except ValueError:
+                with QSignalBlocker(self):
+                    item.setText(self._editing_previous_value)
+                return
+
+        # Series number must be a positive number.
+        if column == 6 and value:
+            try:
+                number = float(value)
+                if number < 1:
+                    raise ValueError
+            except ValueError:
+                with QSignalBlocker(self):
+                    item.setText(self._editing_previous_value)
+                return
+
+        self.metadata_cell_edited.emit(
+            path,
+            column,
+            value,
         )
+
+    def _item_double_clicked(self, item):
+        column = item.column()
+
+        if column == 0:
+            path = item.data(256)
+            if not path:
+                return
+
+            QDesktopServices.openUrl(
+                QUrl.fromLocalFile(path)
+            )
+            return
+
+        self._editing_previous_value = item.text()
 
     def select_file(self, path):
         for row in range(self.rowCount()):
