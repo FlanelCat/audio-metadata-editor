@@ -105,6 +105,9 @@ class MainWindow(QMainWindow):
 
         # File list
         self.file_list = FileList()
+        self.file_list.metadata_cell_edited.connect(
+            self._metadata_cell_edited
+        )
         self.file_list.file_selected.connect(self._file_selected)
         self.file_list.files_selected.connect(self._files_selected)
         splitter.addWidget(self.file_list)
@@ -465,9 +468,9 @@ class MainWindow(QMainWindow):
 
         self.multi_edit_fields.clear()
         self.multi_edit_artwork = False
-        self._update_multi_edit_visuals()
 
         self._show_metadata(metadata)
+        self._update_multi_edit_visuals()
 
     def _get_edited_metadata(self):
         from audio_metadata_editor.metadata import Metadata
@@ -845,7 +848,7 @@ class MainWindow(QMainWindow):
             )
             self.artwork_label.clear()
             return
-        self.artwork_label.clear()
+        
 
     def _common_metadata_value(self, metadatas, attribute):
         if not metadatas:
@@ -972,6 +975,17 @@ class MainWindow(QMainWindow):
                     else None
                 )
 
+        # Refresh filename indicators when Metadata-panel fields change.
+        for widget in fields.values():
+            if isinstance(widget, QPlainTextEdit):
+                widget.textChanged.connect(
+                    self._update_dirty_indicators
+                )
+            else:
+                widget.textChanged.connect(
+                    self._update_dirty_indicators
+                )
+
     def _update_multi_edit_visuals(self):
         fields = {
             "title": self.title_edit,
@@ -1016,6 +1030,7 @@ class MainWindow(QMainWindow):
                 f"{len(self.selected_files)} {file_word} selected — "
                 f"{field_count} {field_word} will be changed"
             )
+        self._update_dirty_indicators()
 
     def _multi_edit_field_names(self):
         names = {
@@ -1365,3 +1380,47 @@ class MainWindow(QMainWindow):
             return
 
         super().keyPressEvent(event)
+
+    def _metadata_cell_edited(self, path, column, value):
+        if len(self.selected_files) != 1:
+            return
+
+        if self.current_file is None:
+            return
+
+        if Path(path) != self.current_file:
+            return
+
+        fields = {
+            1: ("track_number", self.track_edit),
+            2: ("title", self.title_edit),
+            3: ("artist", self.artist_edit),
+            4: ("album", self.album_edit),
+            5: ("series", self.series_edit),
+            6: ("series_number", self.series_number_edit),
+            7: ("narrator", self.narrator_edit),
+        }
+
+        field_info = fields.get(column)
+
+        if field_info is None:
+            return
+
+        _, widget = field_info
+
+        with QSignalBlocker(widget):
+            widget.setText(value)
+
+        self._update_dirty_indicators()
+
+    def _update_dirty_indicators(self):
+        dirty_paths = []
+
+        if len(self.selected_files) > 1:
+            if self.multi_edit_fields or self.multi_edit_artwork:
+                dirty_paths = self.selected_files.copy()
+
+        elif self.current_file is not None and self._has_unsaved_changes():
+            dirty_paths = [self.current_file]
+
+        self.file_list.set_dirty_files(dirty_paths)

@@ -7,7 +7,7 @@ from PySide6.QtCore import (
     QUrl,
     Qt,
 )
-from PySide6.QtGui import QDesktopServices
+from PySide6.QtGui import QDesktopServices, QFont
 from PySide6.QtWidgets import QHeaderView, QTableWidget, QTableWidgetItem
 
 from ..metadata.reader import read_metadata
@@ -352,3 +352,26 @@ class FileList(QTableWidget):
                 restored_paths.append(path)
 
         self.files_selected.emit(restored_paths)
+
+    def set_dirty_files(self, paths):
+        dirty_paths = {str(path) for path in paths}
+
+        for row in range(self.rowCount()):
+            item = self.item(row, 0)
+
+            if item is None:
+                continue
+
+            path = item.data(256)
+
+            # Remember the original filename once.
+            original_name = item.data(257)
+
+            if original_name is None:
+                original_name = item.text()
+                item.setData(257, original_name)
+
+            if path in dirty_paths:
+                item.setText(f"* {original_name}")
+            else:
+                item.setText(original_name)
