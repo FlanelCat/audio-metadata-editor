@@ -1,15 +1,22 @@
 from pathlib import Path
 
 from PySide6.QtCore import (
+    QEvent,
     QItemSelectionModel,
     QSignalBlocker,
     Signal,
     QUrl,
     Qt,
+    QTimer,
 )
 from PySide6.QtGui import QDesktopServices, QFont
-from PySide6.QtWidgets import QHeaderView, QTableWidget, QTableWidgetItem
-
+from PySide6.QtWidgets import (
+    QHeaderView,
+    QLineEdit,
+    QStyledItemDelegate,
+    QTableWidget,
+    QTableWidgetItem,
+)
 from ..metadata.reader import read_metadata
 
 AUDIO_EXTENSIONS = {".mp3", ".m4b"}
@@ -47,10 +54,74 @@ class SortableTableWidgetItem(QTableWidgetItem):
 
         return self.text().casefold() < other.text().casefold()
 
+class EnterNavigationDelegate(QStyledItemDelegate):
+    save_cell_requested = Signal(str, int, str)
+
+    def eventFilter(self, editor, event):
+        if (
+            event.type() == QEvent.Type.KeyPress
+            and event.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter)
+        ):
+            view = self.parent()
+
+            if not isinstance(view, QTableWidget):
+                return super().eventFilter(editor, event)
+
+            current = view.currentIndex()
+            row = current.row()
+            column = current.column()
+
+            # Only metadata columns are eligible; never process Filename.
+            if row < 0 or column < 1 or column > 7:
+                return super().eventFilter(editor, event)
+
+            # Commit the edit before requesting an immediate disk save.
+            self.commitData.emit(editor)
+            self.closeEditor.emit(
+                editor,
+                QStyledItemDelegate.EndEditHint.NoHint,
+            )
+
+            item = view.item(row, column)
+            filename_item = view.item(row, 0)
+
+            if item is not None and filename_item is not None:
+                path = filename_item.data(256)
+                if path:
+                    self.save_cell_requested.emit(
+                        str(path),
+                        column,
+                        item.text(),
+                    )
+
+            # Stop at the bottom; do not wrap around.
+            next_row = row + 1
+            if next_row < view.rowCount():
+                next_index = view.model().index(next_row, column)
+
+                view.selectionModel().setCurrentIndex(
+                    next_index,
+                    QItemSelectionModel.SelectionFlag.NoUpdate,
+                )
+
+                # Start editing the next cell and select its contents.
+                def edit_next_cell():
+                    view.edit(next_index)
+                    next_editor = view.focusWidget()
+                    if isinstance(next_editor, QLineEdit):
+                        next_editor.selectAll()
+
+                QTimer.singleShot(0, edit_next_cell)
+
+            return True
+
+        return super().eventFilter(editor, event)
+
 class FileList(QTableWidget):
     file_selected = Signal(str)
     files_selected = Signal(list)
     metadata_cell_edited = Signal(str, int, str)
+    save_cell_requested = Signal(str, int, str)
 
     def __init__(self):
         super().__init__()
@@ -100,6 +171,9 @@ class FileList(QTableWidget):
         self.itemDoubleClicked.connect(self._item_double_clicked)
         self.itemChanged.connect(self._item_changed)
         self._editing_previous_value = ""
+        delegate = EnterNavigationDelegate(self)
+        delegate.save_cell_requested.connect(self.save_cell_requested)
+        self.setItemDelegate(delegate)
 
     def load_directory(self, directory: Path):
         self.setRowCount(0)

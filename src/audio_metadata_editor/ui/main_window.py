@@ -105,6 +105,9 @@ class MainWindow(QMainWindow):
 
         # File list
         self.file_list = FileList()
+        self.file_list.save_cell_requested.connect(
+            self._save_table_cell
+        )
         self.file_list.metadata_cell_edited.connect(
             self._metadata_cell_edited
         )
@@ -1382,36 +1385,10 @@ class MainWindow(QMainWindow):
         super().keyPressEvent(event)
 
     def _metadata_cell_edited(self, path, column, value):
-        if len(self.selected_files) != 1:
-            return
-
-        if self.current_file is None:
-            return
-
-        if Path(path) != self.current_file:
-            return
-
-        fields = {
-            1: ("track_number", self.track_edit),
-            2: ("title", self.title_edit),
-            3: ("artist", self.artist_edit),
-            4: ("album", self.album_edit),
-            5: ("series", self.series_edit),
-            6: ("series_number", self.series_number_edit),
-            7: ("narrator", self.narrator_edit),
-        }
-
-        field_info = fields.get(column)
-
-        if field_info is None:
-            return
-
-        _, widget = field_info
-
-        with QSignalBlocker(widget):
-            widget.setText(value)
-
-        self._update_dirty_indicators()
+        # Table edits are handled by the immediate-save workflow.
+        # Do not copy them into the Metadata panel, because that
+        # would incorrectly mark the file as having unsaved changes.
+        return
 
     def _update_dirty_indicators(self):
         dirty_paths = []
@@ -1424,3 +1401,71 @@ class MainWindow(QMainWindow):
             dirty_paths = [self.current_file]
 
         self.file_list.set_dirty_files(dirty_paths)
+
+    def _save_table_cell(self, path_string, column, value):
+        path = Path(path_string)
+
+        fields = {
+            1: "track_number",
+            2: "title",
+            3: "artist",
+            4: "album",
+            5: "series",
+            6: "series_number",
+            7: "narrator",
+        }
+
+        field = fields.get(column)
+        if field is None:
+            return
+
+        try:
+            # Read the file's current metadata so unrelated fields
+            # are not overwritten.
+            metadata = read_metadata(path)
+
+            # Convert numeric table fields before saving.
+            if field == "track_number":
+                value = int(value) if value.strip() else None
+            elif field == "series_number":
+                value = float(value) if value.strip() else None
+
+            setattr(metadata, field, value)
+
+            suffix = path.suffix.lower()
+
+            if suffix == ".mp3":
+                write_mp3_metadata(
+                    path,
+                    metadata,
+                    metadata.artwork,
+                    metadata.artwork_mime,
+                )
+            elif suffix == ".m4b":
+                write_m4b_metadata(
+                    path,
+                    metadata,
+                    metadata.artwork,
+                    metadata.artwork_mime,
+                )
+            else:
+                raise ValueError(
+                    f"Unsupported file type: {path.suffix}"
+                )
+
+            # Refresh the row from the metadata object we just saved.
+            self.file_list.update_file_metadata(path, metadata)
+
+        except Exception as exc:
+            QMessageBox.critical(
+                self,
+                "Immediate Save Failed",
+                f"Could not save the metadata for:\n{path.name}\n\n{exc}",
+            )
+
+            # Restore the table display from the file on disk.
+            try:
+                disk_metadata = read_metadata(path)
+                self.file_list.update_file_metadata(path, disk_metadata)
+            except Exception:
+                pass
