@@ -1,0 +1,222 @@
+# Audio Metadata Editor — Testing Strategy
+
+## 1. Purpose
+
+Testing protects audiobook files from unintended metadata changes and helps ensure that application behavior remains consistent as the project develops.
+
+Automated tests should focus particularly on metadata integrity, editing behavior, dirty-state tracking, and regression prevention.
+
+Automated testing complements rather than replaces manual testing of the graphical user interface.
+
+## 2. Testing Principles
+
+Tests must be:
+
+* repeatable;
+* independent of the user's audiobook library;
+* safe to run at any time;
+* reasonably fast;
+* deterministic where practical.
+
+Tests must never modify production audiobook files.
+
+Tests that write metadata must operate on temporary copies of dedicated test files.
+
+## 3. Test Structure
+
+Tests should be organized as:
+
+```text
+tests/
+├── fixtures/
+├── unit/
+├── integration/
+└── ui/
+```
+
+### `tests/unit/`
+
+Tests ordinary Python logic independently of the GUI and filesystem where practical.
+
+Examples:
+
+* dirty-state calculation;
+* metadata comparison;
+* metadata normalization;
+* field updates;
+* validation;
+* format-independent metadata models.
+
+### `tests/integration/`
+
+Tests interaction with real audio files and metadata formats.
+
+Examples:
+
+* reading MP3 metadata;
+* writing MP3 metadata;
+* reading M4B metadata;
+* writing M4B metadata;
+* preserving artwork;
+* preserving unrelated metadata;
+* preserving unsupported metadata where possible.
+
+### `tests/ui/`
+
+Tests important PySide6 behavior.
+
+Examples:
+
+* file selection;
+* field editing;
+* Enter-key navigation;
+* dirty-state indicators;
+* multi-file selection behavior;
+* unsaved-change handling.
+
+### `tests/fixtures/`
+
+Contains small audio files created specifically for automated testing.
+
+Fixtures must not contain personal audiobook content.
+
+Master fixtures must be treated as read-only.
+
+Tests that modify metadata must first copy the fixture to a temporary location.
+
+## 4. Test Framework
+
+Pytest should be the primary test runner.
+
+PySide6 GUI testing should use pytest-qt where appropriate.
+
+Tests should use pytest facilities such as `tmp_path` for temporary files and directories.
+
+## 5. Unit Testing
+
+Core application behavior should be testable without starting the graphical interface whenever practical.
+
+Important logic should not exist solely inside Qt signal handlers.
+
+For example, determining whether metadata has changed should be implemented as testable application logic rather than being inferred from whether an editor emitted a signal.
+
+Important dirty-state cases include:
+
+* changing a value marks the file dirty;
+* assigning the existing value does not mark the file dirty;
+* restoring the original value clears dirty state;
+* navigating through fields without changing them does not mark the file dirty.
+
+## 6. Metadata Integration Testing
+
+Metadata read/write operations should be tested against actual supported file formats.
+
+At minimum, integration tests should cover MP3 and M4B.
+
+A metadata write test should generally follow this pattern:
+
+1. Copy a fixture into a pytest temporary directory.
+2. Read its original metadata.
+3. Perform the metadata operation.
+4. Read the file again.
+5. Verify the intended change.
+6. Verify that unrelated metadata remains intact.
+
+Particular attention should be given to preservation of:
+
+* artwork;
+* unsupported metadata;
+* metadata fields unrelated to the edit.
+
+## 7. UI Testing
+
+UI tests should concentrate on behavior where interaction between Qt widgets and application state could cause regressions.
+
+Not every visual behavior needs an automated test.
+
+Important automated UI tests include:
+
+* editing a field updates in-memory metadata;
+* entering and leaving a field without modification does not create dirty state;
+* pressing Enter commits an in-memory edit;
+* Enter navigation does not write metadata to disk;
+* changing a value marks the corresponding file as modified;
+* restoring the original value clears the modified state;
+* multi-file editing changes only explicitly selected fields.
+
+## 8. Regression Tests
+
+A bug fix should include a regression test whenever practical.
+
+Ideally, the regression test should reproduce the incorrect behavior before the fix and pass after the fix.
+
+For example, the Enter-navigation dirty-state bug should have a test demonstrating that entering and leaving an unchanged field does not mark the file as modified.
+
+Regression tests should remain in the test suite after the bug is fixed.
+
+## 9. Manual Testing
+
+Some behavior is more effectively tested manually.
+
+Manual testing should be used for areas such as:
+
+* overall editing workflow;
+* keyboard navigation feel;
+* layout and resizing;
+* artwork appearance;
+* dialogs;
+* usability;
+* behavior with real audiobook collections.
+
+Manual testing should normally occur after automated tests pass.
+
+## 10. Test Execution
+
+During development, relevant tests may be run individually.
+
+Before considering a code change complete, the complete automated test suite should be run.
+
+The standard test command should eventually be:
+
+```bash
+pytest
+```
+
+The project should be configured so that running the test suite does not require access to the user's audiobook library.
+
+## 11. Codex Requirements
+
+When Codex changes application behavior, it should:
+
+1. Read the relevant project requirements and architecture documentation.
+2. Inspect existing tests before modifying code.
+3. Add or update tests when behavior changes.
+4. Add a regression test for a bug fix whenever practical.
+5. Run relevant tests while developing the change.
+6. Run the complete test suite before declaring the task complete.
+7. Report which tests were added or changed.
+8. Report the test commands executed and their results.
+
+Codex must not weaken or remove a test merely to make a change pass unless the documented application requirements have intentionally changed.
+
+Codex must never run tests against the user's production audiobook collection.
+
+## 12. Metadata Safety
+
+Metadata integrity is a high-priority testing concern.
+
+A successful test must verify more than whether the requested field changed.
+
+Where appropriate, tests should also verify that unrelated data was not unintentionally altered.
+
+Opening, scanning, selecting, or navigating through files must remain non-destructive operations.
+
+## 13. Testability as an Architectural Requirement
+
+Application logic should be separated from GUI behavior where this improves testability.
+
+Qt widgets should primarily handle presentation and user interaction.
+
+Metadata operations, comparisons, dirty-state calculations, and other core behavior should be implemented so they can be exercised independently by unit tests where practical.
+
+Difficulty testing a piece of core behavior should be treated as a possible indication that responsibilities need to be separated more clearly.
