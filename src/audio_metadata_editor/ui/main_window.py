@@ -1427,34 +1427,52 @@ class MainWindow(QMainWindow):
             # Convert numeric table fields before saving.
             if field == "track_number":
                 value = int(value) if value.strip() else None
-            elif field == "series_number":
-                value = float(value) if value.strip() else None
 
+            unchanged = getattr(metadata, field) == value
             setattr(metadata, field, value)
 
             suffix = path.suffix.lower()
 
-            if suffix == ".mp3":
+            if unchanged:
+                pass
+            elif suffix == ".mp3":
                 write_mp3_metadata(
                     path,
                     metadata,
-                    metadata.artwork,
-                    metadata.artwork_mime,
+                    fields={field},
                 )
             elif suffix == ".m4b":
                 write_m4b_metadata(
                     path,
                     metadata,
-                    metadata.artwork,
-                    metadata.artwork_mime,
+                    fields={field},
                 )
             else:
                 raise ValueError(
                     f"Unsupported file type: {path.suffix}"
                 )
 
-            # Refresh the row from the metadata object we just saved.
+            # Synchronize only this field; other Metadata-panel edits stay pending.
+            metadata = read_metadata(path)
+            if self.current_file == path and self.current_metadata is not None:
+                saved_value = getattr(metadata, field)
+                setattr(self.current_metadata, field, saved_value)
+                if len(self.selected_files) == 1:
+                    widget = {
+                        1: self.track_edit,
+                        2: self.title_edit,
+                        3: self.artist_edit,
+                        4: self.album_edit,
+                        5: self.series_edit,
+                        6: self.series_number_edit,
+                        7: self.narrator_edit,
+                    }[column]
+                    with QSignalBlocker(widget):
+                        widget.setText("" if saved_value is None else str(saved_value))
+
+            # Refresh the row from the successfully saved state.
             self.file_list.update_file_metadata(path, metadata)
+            self._update_dirty_indicators()
 
         except Exception as exc:
             QMessageBox.critical(

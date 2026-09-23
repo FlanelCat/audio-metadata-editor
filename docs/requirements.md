@@ -49,9 +49,11 @@ The application should hide these format-specific differences from normal editin
 
 Metadata changes are first made in application memory.
 
-Editing a field must not immediately modify the audio file on disk.
+Editing behavior depends on the editing workflow.
 
-A user must explicitly initiate a save operation before metadata is written.
+Edits made in the metadata panel must not immediately modify the audio file on disk. They remain pending until the user explicitly saves them.
+
+In the center-panel file table, pressing Enter after editing a metadata cell is itself an explicit save action and immediately writes that field to the audio file.
 
 The application must clearly distinguish between:
 
@@ -64,15 +66,35 @@ Files containing unsaved changes must be visibly identifiable.
 
 Metadata must only be written to disk following an explicit user action.
 
-Examples include:
+The application provides two editing workflows with different explicit save actions.
 
-* Save
-* Save selected files
-* Save all modified files
+### Center-Panel Table
 
-Navigation between fields or files must never implicitly save metadata.
+When editing a metadata cell in the center-panel table, pressing Enter is an explicit save action.
 
-Closing the application, changing directories, or performing another operation that would discard pending edits must warn the user when unsaved changes exist.
+Pressing Enter must:
+
+* commit the edited value;
+* save that field to the corresponding audio file;
+* preserve unrelated metadata;
+* synchronize application state with the successfully saved value;
+* leave no dirty state caused solely by the saved edit; and
+* continue editing in the same column of the next row when one exists.
+
+Merely entering, selecting, or navigating through table cells must not write metadata.
+
+### Metadata Panel
+
+Changes made in the metadata panel remain pending until explicitly saved.
+
+Metadata-panel save actions include:
+
+* the Save Changes button; and
+* choosing Save from an Unsaved Changes prompt.
+
+Navigation between metadata-panel fields must not implicitly save metadata.
+
+Closing the application, changing directories, selecting another file, or performing another operation that would discard pending metadata-panel edits must warn the user when unsaved changes exist.
 
 ## 8. Metadata Preservation
 
@@ -133,13 +155,15 @@ Efficient keyboard-based metadata editing is a core requirement.
 
 The user must be able to move through editable fields without repeatedly using the mouse.
 
-Pressing Enter while editing should commit the current in-memory edit and move editing focus according to the application's navigation rules.
+Pressing Enter while editing a center-panel metadata cell must commit the current edit, save that field to disk, and move editing focus according to the application's navigation rules.
 
-Keyboard navigation must not:
+A successful center-panel Enter-save must not:
 
-* save metadata to disk;
-* create false modifications;
-* trigger unnecessary unsaved-change warnings.
+* leave the successfully saved field dirty;
+* create a false modified state; or
+* trigger an Unsaved Changes warning solely because of that saved edit.
+
+Pressing Enter while editing a field in the metadata panel must not save metadata to disk. Metadata-panel edits remain pending until explicitly saved through the metadata-panel save workflow.
 
 ## 14. Dirty-State Tracking
 

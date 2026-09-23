@@ -12,6 +12,9 @@ dependencies = [
     "PySide6>=6.11",
 ]
 
+[project.optional-dependencies]
+test = ["pytest>=8", "pytest-qt>=4.4"]
+
 [project.scripts]
 audio-metadata-editor = "audio_metadata_editor.main:main"
 

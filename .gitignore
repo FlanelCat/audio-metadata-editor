@@ -19,5 +19,8 @@ htmlcov/
 .DS_Store
 Thumbs.db
 
-# Test files
-tests/
+# Local audio fixtures
+tests/*
+!tests/ui/
+!tests/fixtures/
+!tests/integration/

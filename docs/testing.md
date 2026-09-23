@@ -137,9 +137,14 @@ Not every visual behavior needs an automated test.
 Important automated UI tests include:
 
 * editing a field updates in-memory metadata;
-* entering and leaving a field without modification does not create dirty state;
-* pressing Enter commits an in-memory edit;
-* Enter navigation does not write metadata to disk;
+* entering and leaving a center-panel field without modification does not create dirty state;
+* pressing Enter after changing a center-panel metadata cell saves that field to disk;
+* a successful center-panel Enter-save does not leave the file dirty;
+* a successful center-panel Enter-save does not subsequently cause an Unsaved Changes prompt;
+* pressing Enter continues editing in the same column of the next row when one exists;
+* unrelated metadata is preserved during a center-panel field save;
+* metadata-panel edits remain pending until explicitly saved;
+* pressing Enter in the metadata panel does not itself write metadata to disk.
 * changing a value marks the corresponding file as modified;
 * restoring the original value clears the modified state;
 * multi-file editing changes only explicitly selected fields.
@@ -150,7 +155,7 @@ A bug fix should include a regression test whenever practical.
 
 Ideally, the regression test should reproduce the incorrect behavior before the fix and pass after the fix.
 
-For example, the Enter-navigation dirty-state bug should have a test demonstrating that entering and leaving an unchanged field does not mark the file as modified.
+For example, the center-panel Enter-save regression tests should verify both sides of the workflow: entering and leaving an unchanged field must not create dirty state, while changing a field and pressing Enter must persist that field and leave the successfully saved state clean.
 
 Regression tests should remain in the test suite after the bug is fixed.
 

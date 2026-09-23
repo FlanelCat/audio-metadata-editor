@@ -53,7 +53,7 @@ def _get_pair(tags, frame_id: str) -> tuple[int | None, int | None]:
     try:
         number = int(parts[0])
     except ValueError:
-        return None, None
+        number = None
 
     total = None
 
@@ -127,7 +127,13 @@ def write_mp3_metadata(
     metadata: Metadata,
     artwork=_ARTWORK_UNCHANGED,
     artwork_mime: str = "",
+    *,
+    fields: set[str] | None = None,
 ) -> None:
+    """Filter metadata fields; explicit artwork is independent of this filter.
+
+    Omitting artwork preserves it, including during field-specific writes.
+    """
     tags = ID3(path)
 
     def set_text(frame_id: str, frame_class, value: str) -> None:
@@ -141,75 +147,92 @@ def write_mp3_metadata(
                 )
             )
 
-    set_text("TIT2", TIT2, metadata.title)
-    set_text("TPE1", TPE1, metadata.artist)
-    set_text("TALB", TALB, metadata.album)
-    set_text("TPE2", TPE2, metadata.album_artist)
-    set_text("TCON", TCON, metadata.genre)
-    set_text("TDRC", TDRC, metadata.date)
-    set_text("TCOM", TCOM, metadata.composer)
-    set_text("TCOP", TCOP, metadata.copyright)
-    set_text("TPUB", TPUB, metadata.publisher)
-    set_text("TIT3", TIT3, metadata.description)
+    if fields is None or "title" in fields:
+        set_text("TIT2", TIT2, metadata.title)
+    if fields is None or "artist" in fields:
+        set_text("TPE1", TPE1, metadata.artist)
+    if fields is None or "album" in fields:
+        set_text("TALB", TALB, metadata.album)
+    if fields is None or "album_artist" in fields:
+        set_text("TPE2", TPE2, metadata.album_artist)
+    if fields is None or "genre" in fields:
+        set_text("TCON", TCON, metadata.genre)
+    if fields is None or "date" in fields:
+        set_text("TDRC", TDRC, metadata.date)
+    if fields is None or "composer" in fields:
+        set_text("TCOM", TCOM, metadata.composer)
+    if fields is None or "copyright" in fields:
+        set_text("TCOP", TCOP, metadata.copyright)
+    if fields is None or "publisher" in fields:
+        set_text("TPUB", TPUB, metadata.publisher)
+    if fields is None or "description" in fields:
+        set_text("TIT3", TIT3, metadata.description)
 
-    # Track number, preserving the existing total.
-    tags.delall("TRCK")
-    if metadata.track_number is not None:
-        value = str(metadata.track_number)
-        if metadata.track_total is not None:
-            value += f"/{metadata.track_total}"
+    for frame_id, frame_class, prefix in (
+        ("TRCK", TRCK, "track"),
+        ("TPOS", TPOS, "disc"),
+    ):
+        number_field = f"{prefix}_number"
+        total_field = f"{prefix}_total"
+        if fields is not None and not fields.intersection({number_field, total_field}):
+            continue
 
-        tags.add(
-            TRCK(
-                encoding=3,
-                text=[value],
+        number = getattr(metadata, number_field)
+        total = getattr(metadata, total_field)
+        if fields is None:
+            # Keep the full-write behavior: a missing number removes the pair.
+            value = "" if number is None else str(number)
+            if number is not None and total is not None:
+                value += f"/{total}"
+        else:
+            # Preserve the unrequested component directly from the stored text.
+            parts = _get_text(tags, frame_id).split("/", 1)
+            number_text = parts[0]
+            total_text = parts[1] if len(parts) == 2 else ""
+            if number_field in fields:
+                number_text = "" if number is None else str(number)
+            if total_field in fields:
+                total_text = "" if total is None else str(total)
+            value = number_text + (f"/{total_text}" if total_text else "")
+
+        set_text(frame_id, frame_class, value)
+
+    if fields is None or "comment" in fields or "id3v1_comment" in fields:
+        comments = tags.getall("COMM")
+
+        requested_descriptions = {
+            description
+            for field, description in (("comment", ""), ("id3v1_comment", "ID3v1 Comment"))
+            if fields is None or field in fields
+        }
+        # Keep unrequested categories, including their languages and values.
+        remaining_comments = [
+            frame
+            for frame in comments
+            if frame.desc not in requested_descriptions
+        ]
+
+        tags.setall("COMM", remaining_comments)
+
+        if "" in requested_descriptions and metadata.comment:
+            tags.add(
+                COMM(
+                    encoding=3,
+                    lang="eng",
+                    desc="",
+                    text=[metadata.comment],
+                )
             )
-        )
 
-    # Disc number, preserving the existing total.
-    tags.delall("TPOS")
-    if metadata.disc_number is not None:
-        value = str(metadata.disc_number)
-        if metadata.disc_total is not None:
-            value += f"/{metadata.disc_total}"
-
-        tags.add(
-            TPOS(
-                encoding=3,
-                text=[value],
-        )
-)
-
-    comments = tags.getall("COMM")
-
-    # Preserve unrelated COMM frames.
-    remaining_comments = [
-        frame
-        for frame in comments
-        if frame.desc not in ("", "ID3v1 Comment")
-    ]
-
-    tags.setall("COMM", remaining_comments)
-
-    if metadata.comment:
-        tags.add(
-            COMM(
-                encoding=3,
-                lang="eng",
-                desc="",
-                text=[metadata.comment],
+        if "ID3v1 Comment" in requested_descriptions and metadata.id3v1_comment:
+            tags.add(
+                COMM(
+                    encoding=3,
+                    lang="eng",
+                    desc="ID3v1 Comment",
+                    text=[metadata.id3v1_comment],
+                )
             )
-        )
-
-    if metadata.id3v1_comment:
-        tags.add(
-            COMM(
-                encoding=3,
-                lang="eng",
-                desc="ID3v1 Comment",
-                text=[metadata.id3v1_comment],
-            )
-        )
 
     def set_txxx(description: str, value: str) -> None:
         matching = [
@@ -230,9 +253,12 @@ def write_mp3_metadata(
                 )
             )
 
-    set_txxx("Narrator", metadata.narrator)
-    set_txxx("Series", metadata.series)
-    set_txxx("Series Number", metadata.series_number)
+    if fields is None or "narrator" in fields:
+        set_txxx("Narrator", metadata.narrator)
+    if fields is None or "series" in fields:
+        set_txxx("Series", metadata.series)
+    if fields is None or "series_number" in fields:
+        set_txxx("Series Number", metadata.series_number)
 
     if artwork is not _ARTWORK_UNCHANGED:
         tags.delall("APIC")

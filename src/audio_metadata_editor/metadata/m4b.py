@@ -35,6 +35,9 @@ def _get_pair(
     number = value[0] if len(value) > 0 else None
     total = value[1] if len(value) > 1 else None
 
+    if number == 0:
+        number = None
+
     if total == 0:
         total = None
 
@@ -117,7 +120,13 @@ def write_m4b_metadata(
     metadata: Metadata,
     artwork=_ARTWORK_UNCHANGED,
     artwork_mime: str = "",
+    *,
+    fields: set[str] | None = None,
 ) -> None:
+    """Filter metadata fields; explicit artwork is independent of this filter.
+
+    Omitting artwork preserves it, including during field-specific writes.
+    """
     audio = MP4(path)
 
     if audio.tags is None:
@@ -139,33 +148,56 @@ def write_m4b_metadata(
         else:
             tags.pop(atom, None)
 
-    set_text("\xa9nam", metadata.title)
-    set_text("\xa9ART", metadata.artist)
-    set_text("\xa9alb", metadata.album)
-    set_text("aART", metadata.album_artist)
-    set_text("\xa9gen", metadata.genre)
-    set_text("\xa9day", metadata.date)
-    set_text("\xa9wrt", metadata.composer)
-    set_text("\xa9cmt", metadata.comment)
-    set_text("desc", metadata.description)
-    set_text("cprt", metadata.copyright)
+    if fields is None or "title" in fields:
+        set_text("\xa9nam", metadata.title)
+    if fields is None or "artist" in fields:
+        set_text("\xa9ART", metadata.artist)
+    if fields is None or "album" in fields:
+        set_text("\xa9alb", metadata.album)
+    if fields is None or "album_artist" in fields:
+        set_text("aART", metadata.album_artist)
+    if fields is None or "genre" in fields:
+        set_text("\xa9gen", metadata.genre)
+    if fields is None or "date" in fields:
+        set_text("\xa9day", metadata.date)
+    if fields is None or "composer" in fields:
+        set_text("\xa9wrt", metadata.composer)
+    if fields is None or "comment" in fields:
+        set_text("\xa9cmt", metadata.comment)
+    if fields is None or "description" in fields:
+        set_text("desc", metadata.description)
+    if fields is None or "copyright" in fields:
+        set_text("cprt", metadata.copyright)
 
-    set_freeform("Narrator", metadata.narrator)
-    set_freeform("Series", metadata.series)
-    set_freeform("Series Number", metadata.series_number)
-    set_freeform("Publisher", metadata.publisher)
+    if fields is None or "narrator" in fields:
+        set_freeform("Narrator", metadata.narrator)
+    if fields is None or "series" in fields:
+        set_freeform("Series", metadata.series)
+    if fields is None or "series_number" in fields:
+        set_freeform("Series Number", metadata.series_number)
+    if fields is None or "publisher" in fields:
+        set_freeform("Publisher", metadata.publisher)
 
-    if metadata.track_number is not None:
-        track_total = metadata.track_total or 0
-        tags["trkn"] = [(metadata.track_number, track_total)]
-    else:
-        tags.pop("trkn", None)
+    for atom, prefix in (("trkn", "track"), ("disk", "disc")):
+        number_field = f"{prefix}_number"
+        total_field = f"{prefix}_total"
+        if fields is not None and not fields.intersection({number_field, total_field}):
+            continue
 
-    if metadata.disc_number is not None:
-        disc_total = metadata.disc_total or 0
-        tags["disk"] = [(metadata.disc_number, disc_total)]
-    else:
-        tags.pop("disk", None)
+        number = getattr(metadata, number_field)
+        total = getattr(metadata, total_field)
+        if fields is not None:
+            disk_number, disk_total = _get_pair(tags, atom)
+            if number_field not in fields:
+                number = disk_number
+            if total_field not in fields:
+                total = disk_total
+
+        if number is not None or (fields is not None and total is not None):
+            # MP4 uses zero for an absent component of a retained pair.
+            tags[atom] = [(number or 0, total or 0)]
+        else:
+            tags.pop(atom, None)
 
     if artwork is not _ARTWORK_UNCHANGED:
         if artwork:
