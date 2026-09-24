@@ -205,6 +205,8 @@ Logic that can be expressed independently of Qt widgets should preferably move t
 
 Refactoring should be incremental and driven by concrete requirements or testing benefits.
 
+`ui/dialogs/paste_fields_dialog.py` owns only the supplied field checkboxes and selection controls. `MainWindow` retains remembered choices, clipboard data, pending metadata/artwork application, previews, and saving. Rejection is distinct from accepting an empty selection.
+
 ## 10. File List
 
 `ui/file_list.py` owns the central file table and its direct interaction behavior.

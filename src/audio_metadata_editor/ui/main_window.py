@@ -11,11 +11,9 @@ from PySide6.QtGui import (
     QShortcut,
 )
 from PySide6.QtWidgets import (
-    QCheckBox,
     QDialog,
     QFileDialog,
     QFormLayout,
-    QHBoxLayout,
     QLabel,
     QLineEdit,
     QMainWindow,
@@ -32,6 +30,7 @@ from PySide6.QtWidgets import (
 
 from ..metadata.writer import write_metadata
 from .dialogs.auto_number_dialog import AutoNumberDialog
+from .dialogs.paste_fields_dialog import PasteFieldsDialog
 from .file_list import FileList
 from ..metadata import (
     read_metadata,
@@ -1154,18 +1153,6 @@ class MainWindow(QMainWindow):
             )
             return
 
-        dialog = QDialog(self)
-        dialog.setWindowTitle("Paste Metadata")
-        dialog.setModal(True)
-
-        layout = QVBoxLayout(dialog)
-
-        layout.addWidget(
-            QLabel(
-                "Select the fields to paste into the selected files:"
-            )
-        )
-
         fields = {
             "title": "Title",
             "artist": "Artist",
@@ -1186,70 +1173,14 @@ class MainWindow(QMainWindow):
             "id3v1_comment": "ID3v1 Comment",
             "copyright": "Copyright",
             "description": "Description",
+            "artwork": "Artwork",
         }
 
-        checkboxes = {}
-
-        for field, label in fields.items():
-            checkbox = QCheckBox(label)
-            checkbox.setChecked(
-                field in self.paste_metadata_fields
-            )
-            checkboxes[field] = checkbox
-            layout.addWidget(checkbox)
-
-        artwork_checkbox = QCheckBox("Artwork")
-        artwork_checkbox.setChecked(
-            "artwork" in self.paste_metadata_fields
-        )
-        checkboxes["artwork"] = artwork_checkbox
-        layout.addWidget(artwork_checkbox)
-
-        selection_layout = QHBoxLayout()
-
-        select_all_button = QPushButton("Select All")
-        clear_all_button = QPushButton("Clear All")
-
-        selection_layout.addWidget(select_all_button)
-        selection_layout.addWidget(clear_all_button)
-
-        layout.addLayout(selection_layout)
-
-        select_all_button.clicked.connect(
-            lambda: [
-                checkbox.setChecked(True)
-                for checkbox in checkboxes.values()
-            ]
-        )
-
-        clear_all_button.clicked.connect(
-            lambda: [
-                checkbox.setChecked(False)
-                for checkbox in checkboxes.values()
-            ]
-        )
-
-        button_layout = QHBoxLayout()
-
-        cancel_button = QPushButton("Cancel")
-        paste_button = QPushButton("Paste")
-
-        button_layout.addWidget(cancel_button)
-        button_layout.addWidget(paste_button)
-
-        layout.addLayout(button_layout)
-
-        cancel_button.clicked.connect(dialog.reject)
-        paste_button.clicked.connect(dialog.accept)
-
+        dialog = PasteFieldsDialog(fields, self.paste_metadata_fields, self)
         if dialog.exec() != QDialog.DialogCode.Accepted:
             return
 
-        selected_fields = {
-            field
-            for field, checkbox in checkboxes.items()
-            if checkbox.isChecked()
-        }
+        selected_fields = dialog.selected_fields
 
         self.paste_metadata_fields = selected_fields.copy()
 
@@ -1268,6 +1199,19 @@ class MainWindow(QMainWindow):
             )
             if len(self.selected_files) > 1:
                 self.multi_edit_artwork = True
+
+            # Preview pending artwork without saving or repopulating text edits.
+            self.artwork_label.clear()
+            if self.pending_artwork:
+                image = QImage.fromData(self.pending_artwork)
+                if not image.isNull():
+                    self.artwork_label.setPixmap(
+                        QPixmap.fromImage(image).scaled(
+                            self.artwork_label.size(),
+                            Qt.AspectRatioMode.KeepAspectRatio,
+                            Qt.TransformationMode.SmoothTransformation,
+                        )
+                    )
 
             selected_fields.remove("artwork")
 
