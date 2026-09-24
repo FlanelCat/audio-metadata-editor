@@ -137,6 +137,8 @@ The list should allow the user to:
 
 The file list represents files, not database records.
 
+Every column automatically grows or shrinks to fit the wider of its complete header and widest displayed cell, including Qt style padding. Sizing considers all rows, including rows outside the viewport, and updates after loading a file set or changing displayed metadata. Empty tables and columns retain enough width for their headers.
+
 ## 11. Single-File Editing
 
 When one file is selected, its metadata must be available for detailed editing.

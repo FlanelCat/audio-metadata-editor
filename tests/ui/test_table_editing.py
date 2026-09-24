@@ -57,6 +57,8 @@ def test_enter_saves_and_advances(window, qtbot):
     ]
     saved = read_metadata(path)
     assert saved.title == 'Regression title'
+    qtbot.waitUntil(lambda: table.columnWidth(2) == max(
+        table.horizontalHeader().sectionSizeHint(2), table.sizeHintForColumn(2)))
     before.title = saved.title
     assert saved == before
     assert window.current_metadata.title == saved.title
@@ -237,6 +239,10 @@ def test_panel_save_finalizes_disk_state(window, qtbot, monkeypatch, field, widg
     assert getattr(saved, field) == expected
     setattr(before, field, expected)
     assert saved == before
+    table = window.file_list
+    qtbot.waitUntil(lambda: all(table.columnWidth(c) == max(
+        table.horizontalHeader().sectionSizeHint(c), table.sizeHintForColumn(c))
+        for c in range(table.columnCount())))
     assert window.current_metadata == saved
     assert widget.text() == ('' if expected is None else str(expected))
     assert not window._has_unsaved_changes()

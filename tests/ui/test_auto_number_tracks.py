@@ -80,7 +80,7 @@ def raw_unrelated(path):
 
 
 @pytest.mark.parametrize('start', ['1', '8'])
-def test_single_preservation_and_clean_state(window, start):
+def test_single_preservation_and_clean_state(window, start, qtbot):
     path = window.current_file
     before = read_metadata(path)
     raw = raw_unrelated(path)
@@ -92,6 +92,9 @@ def test_single_preservation_and_clean_state(window, start):
     assert window.current_metadata == before
     assert window.track_edit.text() == start
     assert window.file_list.item(0, 1).text() == start
+    table = window.file_list
+    qtbot.waitUntil(lambda: table.columnWidth(1) == max(
+        table.horizontalHeader().sectionSizeHint(1), table.sizeHintForColumn(1)))
     assert not window._has_unsaved_changes()
     assert not window.file_list.item(0, 0).text().startswith('*')
     window._file_selected(str(paths(window)[1]))  # No unsaved-change prompt.

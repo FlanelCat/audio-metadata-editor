@@ -158,14 +158,10 @@ class FileList(QTableWidget):
         header = self.horizontalHeader()
 
         header.setStretchLastSection(False)
-        header.setSectionResizeMode(0, QHeaderView.ResizeMode.Interactive)
-        header.setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents)
-        header.setSectionResizeMode(2, QHeaderView.ResizeMode.Interactive)
-        header.setSectionResizeMode(3, QHeaderView.ResizeMode.Interactive)
-        header.setSectionResizeMode(4, QHeaderView.ResizeMode.Interactive)
-        header.setSectionResizeMode(5, QHeaderView.ResizeMode.Interactive)
-        header.setSectionResizeMode(6, QHeaderView.ResizeMode.ResizeToContents)
-        header.setSectionResizeMode(7, QHeaderView.ResizeMode.Interactive)    
+        # Qt includes header labels, delegate size hints, and style padding.
+        # Inspect every row, including those outside the viewport.
+        header.setResizeContentsPrecision(-1)
+        header.setSectionResizeMode(QHeaderView.ResizeMode.ResizeToContents)
 
         self.itemSelectionChanged.connect(self._selection_changed)
         self.itemDoubleClicked.connect(self._item_double_clicked)
@@ -177,6 +173,8 @@ class FileList(QTableWidget):
 
     def load_directory(self, directory: Path):
         self.setRowCount(0)
+        # Qt may retain old content widths when the model becomes empty.
+        self.resizeColumnsToContents()
 
         try:
             files = sorted(

@@ -237,3 +237,7 @@ QT_QPA_PLATFORM=offscreen .venv/bin/python -m pytest -q tests/ui/test_auto_numbe
 QT_QPA_PLATFORM=offscreen .venv/bin/python -m pytest -q
 git diff --check
 ```
+
+## 15. File Table Column Sizing
+
+`tests/ui/test_column_sizing.py` checks all columns against Qt header and cell size hints, including empty tables, growth and shrinkage, values beyond the default 1000-row sampling limit, metadata refreshes, and switching to an empty directory. File-loading tests use temporary fixture copies and verify that sizing does not modify audio files. Existing UI save tests also check sizing after Enter-save, metadata-panel Save Changes, and Auto-number Tracks.
