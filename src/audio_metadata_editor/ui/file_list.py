@@ -262,6 +262,11 @@ class FileList(QTableWidget):
                         | Qt.ItemFlag.ItemIsEditable
                     )
 
+    def selected_paths_in_row_order(self):
+        rows = sorted(index.row() for index in self.selectionModel().selectedRows())
+        return [self.item(row, 0).data(256) for row in rows
+                if self.item(row, 0) is not None and self.item(row, 0).data(256)]
+
     def _selection_changed(self):
         rows = self.selectionModel().selectedRows()
 
@@ -300,7 +305,9 @@ class FileList(QTableWidget):
             if metadata.track_number is not None:
                 track = str(metadata.track_number)
 
+            sorting = self.isSortingEnabled()
             with QSignalBlocker(self):
+                self.setSortingEnabled(False)
                 self.item(row, 1).setText(track)
                 self.item(row, 2).setText(metadata.title)
                 self.item(row, 3).setText(metadata.artist)
@@ -308,6 +315,7 @@ class FileList(QTableWidget):
                 self.item(row, 5).setText(metadata.series)
                 self.item(row, 6).setText(metadata.series_number)
                 self.item(row, 7).setText(metadata.narrator)
+                self.setSortingEnabled(sorting)
 
             return
 

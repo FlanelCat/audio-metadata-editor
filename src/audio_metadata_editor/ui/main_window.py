@@ -6,6 +6,7 @@ from PySide6.QtCore import (
 )
 from PySide6.QtGui import (
     QImage,
+    QIntValidator,
     QKeySequence,
     QPixmap,
     QShortcut,
@@ -13,6 +14,7 @@ from PySide6.QtGui import (
 from PySide6.QtWidgets import (
     QCheckBox,
     QDialog,
+    QDialogButtonBox,
     QFileDialog,
     QFormLayout,
     QHBoxLayout,
@@ -30,6 +32,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from ..metadata.writer import write_metadata
 from .file_list import FileList
 from ..metadata import (
     read_metadata,
@@ -91,6 +94,7 @@ class MainWindow(QMainWindow):
         toolbar.addWidget(undo_button)
         toolbar.addWidget(copy_button)
         toolbar.addWidget(paste_button)
+        toolbar.addAction("Auto-number Tracks…", self._auto_number_tracks)
 
     def _create_main_layout(self):
         splitter = QSplitter()
@@ -574,6 +578,9 @@ class MainWindow(QMainWindow):
                             artwork_mime,
                         )
 
+                    metadata = read_metadata(path)
+                    if self.current_file == path:
+                        self.current_metadata = metadata
                     self.file_list.update_file_metadata(
                         path,
                         metadata,
@@ -649,6 +656,8 @@ class MainWindow(QMainWindow):
                     f"Unsupported file type: {self.current_file.suffix}"
                 )
 
+            metadata = read_metadata(self.current_file)
+
         except Exception as exc:
             QMessageBox.critical(
                 self,
@@ -658,11 +667,16 @@ class MainWindow(QMainWindow):
             return
 
         self.current_metadata = metadata
+        self.pending_artwork = metadata.artwork
+        self.pending_artwork_mime = metadata.artwork_mime
+        self._show_metadata(metadata)
 
         self.file_list.update_file_metadata(
             self.current_file,
             metadata,
         )
+
+        self._update_dirty_indicators()
 
         QMessageBox.information(
             self,
@@ -1420,59 +1434,9 @@ class MainWindow(QMainWindow):
             return
 
         try:
-            # Read the file's current metadata so unrelated fields
-            # are not overwritten.
-            metadata = read_metadata(path)
-
-            # Convert numeric table fields before saving.
             if field == "track_number":
                 value = int(value) if value.strip() else None
-
-            unchanged = getattr(metadata, field) == value
-            setattr(metadata, field, value)
-
-            suffix = path.suffix.lower()
-
-            if unchanged:
-                pass
-            elif suffix == ".mp3":
-                write_mp3_metadata(
-                    path,
-                    metadata,
-                    fields={field},
-                )
-            elif suffix == ".m4b":
-                write_m4b_metadata(
-                    path,
-                    metadata,
-                    fields={field},
-                )
-            else:
-                raise ValueError(
-                    f"Unsupported file type: {path.suffix}"
-                )
-
-            # Synchronize only this field; other Metadata-panel edits stay pending.
-            metadata = read_metadata(path)
-            if self.current_file == path and self.current_metadata is not None:
-                saved_value = getattr(metadata, field)
-                setattr(self.current_metadata, field, saved_value)
-                if len(self.selected_files) == 1:
-                    widget = {
-                        1: self.track_edit,
-                        2: self.title_edit,
-                        3: self.artist_edit,
-                        4: self.album_edit,
-                        5: self.series_edit,
-                        6: self.series_number_edit,
-                        7: self.narrator_edit,
-                    }[column]
-                    with QSignalBlocker(widget):
-                        widget.setText("" if saved_value is None else str(saved_value))
-
-            # Refresh the row from the successfully saved state.
-            self.file_list.update_file_metadata(path, metadata)
-            self._update_dirty_indicators()
+            self._save_metadata_field(path, field, value)
 
         except Exception as exc:
             QMessageBox.critical(
@@ -1487,3 +1451,95 @@ class MainWindow(QMainWindow):
                 self.file_list.update_file_metadata(path, disk_metadata)
             except Exception:
                 pass
+
+    def _save_metadata_field(self, path, field, value):
+        """Persist one field and synchronize only its panel baseline."""
+        metadata = read_metadata(path)
+        if getattr(metadata, field) != value:
+            setattr(metadata, field, value)
+            write_metadata(path, metadata, fields={field})
+        metadata = read_metadata(path)
+        saved_value = getattr(metadata, field)
+        if self.current_file == path and self.current_metadata is not None:
+            setattr(self.current_metadata, field, saved_value)
+            if len(self.selected_files) == 1:
+                widget = {
+                    "track_number": self.track_edit,
+                    "title": self.title_edit,
+                    "artist": self.artist_edit,
+                    "album": self.album_edit,
+                    "series": self.series_edit,
+                    "series_number": self.series_number_edit,
+                    "narrator": self.narrator_edit,
+                }[field]
+                with QSignalBlocker(widget):
+                    widget.setText("" if saved_value is None else str(saved_value))
+        self.file_list.update_file_metadata(path, metadata)
+        self._update_dirty_indicators()
+
+    def _auto_number_tracks(self):
+        paths = self.file_list.selected_paths_in_row_order()
+        if not paths:
+            QMessageBox.information(
+                self, "Auto-number Tracks", "Select at least one file to number."
+            )
+            return
+
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Auto-number Tracks")
+        layout = QFormLayout(dialog)
+        starting_number = QLineEdit("1", dialog)
+        starting_number.setValidator(QIntValidator(1, 2147483647, starting_number))
+        layout.addRow("Starting track number", starting_number)
+        buttons = QDialogButtonBox(
+            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
+        )
+        layout.addRow(buttons)
+        ok_button = buttons.button(QDialogButtonBox.StandardButton.Ok)
+        starting_number.textChanged.connect(
+            lambda: ok_button.setEnabled(starting_number.hasAcceptableInput())
+        )
+        buttons.accepted.connect(
+            lambda: dialog.accept() if starting_number.hasAcceptableInput() else None
+        )
+        buttons.rejected.connect(dialog.reject)
+        starting_number.selectAll()
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            return
+        start = starting_number.validator().locale().toInt(starting_number.text())[0]
+
+        # Freeze sorting while rows and dirty indicators are refreshed. The path
+        # snapshot also keeps numbering independent of changes to the sort column.
+        sorting = self.file_list.isSortingEnabled()
+        self.file_list.setSortingEnabled(False)
+        saved = 0
+        try:
+            for number, path in enumerate(paths, start):
+                try:
+                    self._save_metadata_field(Path(path), "track_number", number)
+                    saved += 1
+                    if len(self.selected_files) > 1 and "track_number" not in self.multi_edit_fields:
+                        self._refresh_selected_tracks()
+                except Exception as exc:
+                    QMessageBox.critical(
+                        self, "Auto-number Tracks Failed",
+                        f"Could not number:\n{path}\n\n{exc}\n\n"
+                        f"{saved} file(s) saved. Remaining files were not processed.",
+                    )
+                    return
+            if len(self.selected_files) > 1:
+                self.multi_edit_fields.discard("track_number")
+                self._refresh_selected_tracks()
+                self._update_multi_edit_visuals()
+            self.statusBar().showMessage(f"Auto-numbered {saved} file(s).")
+        finally:
+            self.file_list.setSortingEnabled(sorting)
+
+    def _refresh_selected_tracks(self):
+        metadatas = [read_metadata(Path(path)) for path in self.selected_files]
+        value, common = self._common_metadata_value(metadatas, "track_number")
+        with QSignalBlocker(self.track_edit):
+            self.track_edit.setText(str(value) if common and value is not None else "")
+            self.track_edit.setPlaceholderText(
+                "" if common else "<multiple values — edit to apply to all>"
+            )

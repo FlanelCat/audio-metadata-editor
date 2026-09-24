@@ -225,3 +225,15 @@ Qt widgets should primarily handle presentation and user interaction.
 Metadata operations, comparisons, dirty-state calculations, and other core behavior should be implemented so they can be exercised independently by unit tests where practical.
 
 Difficulty testing a piece of core behavior should be treated as a possible indication that responsibilities need to be separated more clearly.
+
+## 14. Auto-number Tracks Regression Coverage
+
+`tests/ui/test_auto_number_tracks.py` exercises the toolbar and real dialog with temporary copies of both dedicated MP3 and M4B fixtures. Coverage includes single/multiple selection, default/custom starting numbers, visual row order under sorting, unselected files, positive-integer validation, Cancel, and no selection. Disk and UI assertions cover track-total preservation, unrelated/unknown tags, comments, artwork, saved-state synchronization, clean state, and pending panel edits. Injected write failures verify that earlier saves remain synchronized, the failed file is not marked saved, later files are untouched, and the error identifies the failed file.
+
+Run focused tests, then the full suite and whitespace check:
+
+```bash
+QT_QPA_PLATFORM=offscreen .venv/bin/python -m pytest -q tests/ui/test_auto_number_tracks.py tests/ui/test_table_editing.py tests/integration/test_field_isolation.py
+QT_QPA_PLATFORM=offscreen .venv/bin/python -m pytest -q
+git diff --check
+```

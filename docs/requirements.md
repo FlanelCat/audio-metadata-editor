@@ -66,7 +66,7 @@ Files containing unsaved changes must be visibly identifiable.
 
 Metadata must only be written to disk following an explicit user action.
 
-The application provides two editing workflows with different explicit save actions.
+The application provides two editing workflows with different explicit save actions, plus the explicit Auto-number Tracks operation.
 
 ### Center-Panel Table
 
@@ -95,6 +95,14 @@ Metadata-panel save actions include:
 Navigation between metadata-panel fields must not implicitly save metadata.
 
 Closing the application, changing directories, selecting another file, or performing another operation that would discard pending metadata-panel edits must warn the user when unsaved changes exist.
+
+### Auto-number Tracks
+
+The main toolbar provides **Auto-number Tracks…** for the currently selected center-panel rows. The dialog asks for **Starting track number**, defaults to 1, and accepts only positive integers. Cancel makes no changes; with no selection, an informational message requests selected files.
+
+OK explicitly saves consecutive `track_number` values in the current visual row order, without independently sorting paths. Only track numbers are written; track totals, comments, artwork, and unrelated/unknown metadata are preserved for MP3 and M4B. Each successful save updates the table and saved-state baseline without introducing dirty state or discarding unrelated pending metadata-panel edits.
+
+Saving is sequential and stops at the first failure. Earlier successful writes remain saved and synchronized; subsequent files are not processed. The error identifies the failed file and cause and reports how many files were saved. No rollback is attempted.
 
 ## 8. Metadata Preservation
 

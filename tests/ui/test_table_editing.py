@@ -131,8 +131,7 @@ def test_failed_save_keeps_loaded_state(window, qtbot, monkeypatch):
     errors = []
     def fail(*args, **kwargs):
         raise OSError('Write failed')
-    monkeypatch.setattr(module, 'write_mp3_metadata', fail)
-    monkeypatch.setattr(module, 'write_m4b_metadata', fail)
+    monkeypatch.setattr(module, 'write_metadata', fail)
     monkeypatch.setattr(QMessageBox, 'critical', lambda *args: errors.append(args))
     editor = edit_cell(window, qtbot)
     qtbot.keyClicks(editor, 'Failed title')
@@ -205,4 +204,102 @@ def test_panel_explicit_save(window, qtbot, monkeypatch):
     assert window._has_unsaved_changes()
     window._save_changes()
     assert read_metadata(window.current_file).title == 'Panel saved title'
+    assert not window._has_unsaved_changes()
+
+
+@pytest.mark.parametrize('field,widget_name,value', [
+    ('disc_number', 'disc_edit', '2'),
+    ('disc_total', 'disc_total_edit', '5'),
+    ('track_number', 'track_edit', '7'),
+    ('track_total', 'track_total_edit', '12'),
+    ('title', 'title_edit', 'Panel regression title'),
+])
+def test_panel_save_finalizes_disk_state(window, qtbot, monkeypatch, field, widget_name, value):
+    from PySide6.QtWidgets import QPushButton
+
+    monkeypatch.setattr(QMessageBox, 'information', lambda *args: None)
+    path = window.current_file
+    before = read_metadata(path)
+    widget = getattr(window, widget_name)
+    widget.selectAll()
+    qtbot.keyClicks(widget, value)
+    assert window._has_unsaved_changes()
+    assert window.file_list.item(0, 0).text().startswith('*')
+    assert read_metadata(path) == before
+    save = next(button for button in window.findChildren(QPushButton)
+                if button.text() == 'Save Changes')
+    qtbot.mouseClick(save, Qt.MouseButton.LeftButton)
+    saved = read_metadata(path)
+    # Existing full-write semantics remove a total when its number is absent.
+    expected = int(value) if field != 'title' else value
+    if field.endswith('_total') and getattr(before, field.replace('_total', '_number')) is None:
+        expected = None
+    assert getattr(saved, field) == expected
+    setattr(before, field, expected)
+    assert saved == before
+    assert window.current_metadata == saved
+    assert widget.text() == ('' if expected is None else str(expected))
+    assert not window._has_unsaved_changes()
+    assert not window.file_list.item(0, 0).text().startswith('*')
+    assert window.file_list.item(0, 1).text() == ('' if saved.track_number is None else str(saved.track_number))
+    assert window.file_list.item(0, 2).text() == saved.title
+    window._file_selected(window.file_list.item(1, 0).data(256))
+
+
+@pytest.mark.parametrize('prefix', ['track', 'disc'])
+def test_panel_save_pair_normalization(window, monkeypatch, prefix):
+    monkeypatch.setattr(QMessageBox, 'information', lambda *args: None)
+    getattr(window, f'{prefix}_edit').setText('0')
+    getattr(window, f'{prefix}_total_edit').setText('0')
+    window._save_changes()
+    saved = read_metadata(window.current_file)
+    expected = None if window.current_file.suffix == '.m4b' else 0
+    assert getattr(saved, f'{prefix}_number') == expected
+    assert getattr(saved, f'{prefix}_total') == expected
+    assert window.current_metadata == saved
+    assert getattr(window, f'{prefix}_edit').text() == ('' if expected is None else '0')
+    assert getattr(window, f'{prefix}_total_edit').text() == ('' if expected is None else '0')
+    assert not window._has_unsaved_changes()
+    assert not window.file_list.item(0, 0).text().startswith('*')
+
+
+@pytest.mark.parametrize('prefix', ['track', 'disc'])
+@pytest.mark.parametrize('multiple', [False, True])
+def test_panel_save_complete_pair(window, qtbot, monkeypatch, prefix, multiple):
+    monkeypatch.setattr(QMessageBox, 'information', lambda *args: None)
+    paths = [Path(window.file_list.item(row, 0).data(256)) for row in range(2)]
+    if multiple:
+        window.file_list.select_files([str(path) for path in paths])
+    for widget, value in ((getattr(window, f'{prefix}_edit'), '3'),
+                          (getattr(window, f'{prefix}_total_edit'), '17')):
+        widget.selectAll()
+        qtbot.keyClicks(widget, value)
+    window._save_changes()
+    for row, path in enumerate(paths if multiple else paths[:1]):
+        saved = read_metadata(path)
+        assert getattr(saved, f'{prefix}_number') == 3
+        assert getattr(saved, f'{prefix}_total') == 17
+        assert not window.file_list.item(row, 0).text().startswith('*')
+        assert window.file_list.item(row, 1).text() == ('' if saved.track_number is None else str(saved.track_number))
+    assert window.current_metadata == read_metadata(window.current_file)
+    assert getattr(window, f'{prefix}_edit').text() == '3'
+    assert getattr(window, f'{prefix}_total_edit').text() == '17'
+    assert not window._has_unsaved_changes()
+    window._file_selected(str(paths[1]))
+
+
+def test_panel_multi_save_normalized_table(window, qtbot, monkeypatch):
+    monkeypatch.setattr(QMessageBox, 'information', lambda *args: None)
+    paths = [Path(window.file_list.item(row, 0).data(256)) for row in range(2)]
+    window.file_list.select_files([str(path) for path in paths])
+    window.track_edit.selectAll()
+    qtbot.keyClicks(window.track_edit, '0')
+    window._save_changes()
+    for row, path in enumerate(paths):
+        saved = read_metadata(path)
+        expected = '' if saved.track_number is None else str(saved.track_number)
+        assert window.file_list.item(row, 1).text() == expected
+        assert window.track_edit.text() == expected
+        assert not window.file_list.item(row, 0).text().startswith('*')
+    assert window.current_metadata == read_metadata(window.current_file)
     assert not window._has_unsaved_changes()

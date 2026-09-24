@@ -323,6 +323,10 @@ The two workflows must remain distinct.
 Both workflows ultimately use the same metadata-reading and metadata-writing infrastructure, but their user interaction and save semantics are intentionally different.
 
 
+### 11.4 Auto-number Tracks
+
+The toolbar action snapshots selected file paths in visual table row order. Dialog OK explicitly saves consecutive track numbers through the same single-field save helper as table Enter-save. The common writer forwards the requested field set to the format-specific writer. Sorting is temporarily suspended during row updates. Each successful save refreshes disk-backed table data and the affected panel baseline while preserving unrelated pending edits. Processing stops on the first failure without rolling back previous saves. This extends the explicit-save model without changing either existing editing workflow.
+
 ## 12. Dirty State
 
 Dirty state represents an actual difference between pending metadata and the saved/loaded state.
