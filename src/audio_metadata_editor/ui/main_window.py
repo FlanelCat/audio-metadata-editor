@@ -6,7 +6,6 @@ from PySide6.QtCore import (
 )
 from PySide6.QtGui import (
     QImage,
-    QIntValidator,
     QKeySequence,
     QPixmap,
     QShortcut,
@@ -14,7 +13,6 @@ from PySide6.QtGui import (
 from PySide6.QtWidgets import (
     QCheckBox,
     QDialog,
-    QDialogButtonBox,
     QFileDialog,
     QFormLayout,
     QHBoxLayout,
@@ -33,6 +31,7 @@ from PySide6.QtWidgets import (
 )
 
 from ..metadata.writer import write_metadata
+from .dialogs.auto_number_dialog import AutoNumberDialog
 from .file_list import FileList
 from ..metadata import (
     read_metadata,
@@ -1485,28 +1484,10 @@ class MainWindow(QMainWindow):
             )
             return
 
-        dialog = QDialog(self)
-        dialog.setWindowTitle("Auto-number Tracks")
-        layout = QFormLayout(dialog)
-        starting_number = QLineEdit("1", dialog)
-        starting_number.setValidator(QIntValidator(1, 2147483647, starting_number))
-        layout.addRow("Starting track number", starting_number)
-        buttons = QDialogButtonBox(
-            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
-        )
-        layout.addRow(buttons)
-        ok_button = buttons.button(QDialogButtonBox.StandardButton.Ok)
-        starting_number.textChanged.connect(
-            lambda: ok_button.setEnabled(starting_number.hasAcceptableInput())
-        )
-        buttons.accepted.connect(
-            lambda: dialog.accept() if starting_number.hasAcceptableInput() else None
-        )
-        buttons.rejected.connect(dialog.reject)
-        starting_number.selectAll()
+        dialog = AutoNumberDialog(self)
         if dialog.exec() != QDialog.DialogCode.Accepted:
             return
-        start = starting_number.validator().locale().toInt(starting_number.text())[0]
+        start = dialog.starting_number
 
         # Freeze sorting while rows and dirty indicators are refreshed. The path
         # snapshot also keeps numbering independent of changes to the sort column.

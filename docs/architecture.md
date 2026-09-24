@@ -325,6 +325,8 @@ Both workflows ultimately use the same metadata-reading and metadata-writing inf
 
 ### 11.4 Auto-number Tracks
 
+`ui/dialogs/auto_number_dialog.py` owns only starting-number presentation and validation. `MainWindow` invokes the dialog and retains selection, sequencing, persistence, state synchronization, and notifications.
+
 The toolbar action snapshots selected file paths in visual table row order. Dialog OK explicitly saves consecutive track numbers through the same single-field save helper as table Enter-save. The common writer forwards the requested field set to the format-specific writer. Sorting is temporarily suspended during row updates. Each successful save refreshes disk-backed table data and the affected panel baseline while preserving unrelated pending edits. Processing stops on the first failure without rolling back previous saves. This extends the explicit-save model without changing either existing editing workflow.
 
 ## 12. Dirty State
