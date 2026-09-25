@@ -77,3 +77,93 @@ def test_main_window_uses_panel_controls(qtbot):
         assert getattr(window, name) is getattr(panel, name)
     for name in ('artwork_label', 'choose_artwork_button', 'remove_artwork_button'):
         assert getattr(window, name) is getattr(panel, name)
+
+
+def test_metadata_round_trip_and_silent_population(qtbot):
+    from dataclasses import fields
+    from audio_metadata_editor.metadata.model import Metadata
+    panel = MetadataPanel()
+    qtbot.addWidget(panel)
+    expected = Metadata()
+    numeric = {'track_number': 0, 'track_total': 17, 'disc_number': 2, 'disc_total': 5}
+    for field in fields(expected):
+        if field.name in ('artwork', 'artwork_mime'):
+            continue
+        setattr(expected, field.name, numeric.get(field.name, f'  {field.name} value  '))
+    expected.series_number = '01.50 / part A'
+    changes = []
+    for name, _ in FIELDS:
+        getattr(panel, name).textChanged.connect(lambda *args: changes.append(args))
+    panel.set_metadata(expected)
+    assert panel.collect_metadata() == expected
+    assert panel.series_number_edit.text() == '01.50 / part A'
+    assert not changes
+    panel.title_edit.setText('User value')
+    panel.description_edit.setPlainText('New description\nsecond line')
+    collected = panel.collect_metadata()
+    assert collected.title == 'User value'
+    assert collected.description == 'New description\nsecond line'
+    assert len(changes) == 2
+
+
+def test_numeric_conversion_and_independence(qtbot):
+    panel = MetadataPanel()
+    qtbot.addWidget(panel)
+    for text, expected in [('', None), ('  ', None), (' 007 ', 7), ('0', 0),
+                           ('-1', -1), ('1.5', None), ('invalid', None)]:
+        panel.track_edit.setText(text)
+        panel.track_total_edit.setText('17')
+        panel.disc_edit.setText('')
+        panel.disc_total_edit.setText('5')
+        value = panel.collect_metadata()
+        assert value.track_number == expected
+        assert value.track_total == 17
+        assert value.disc_number is None
+        assert value.disc_total == 5
+    # Collection remains separate from MainWindow's validation/save policy.
+    assert panel.track_edit.text() == 'invalid'
+
+
+def test_partial_and_mixed_presentation(qtbot):
+    panel = MetadataPanel()
+    qtbot.addWidget(panel)
+    panel.artist_edit.setText('Pending artist')
+    panel.set_field_values({'title': 'Common title', 'track_number': None,
+                            'description': 'Ignored mixed text'},
+                           mixed_fields={'track_number', 'description'})
+    assert panel.title_edit.text() == 'Common title'
+    assert panel.artist_edit.text() == 'Pending artist'
+    assert panel.track_edit.text() == ''
+    assert panel.description_edit.toPlainText() == ''
+    assert panel.track_edit.placeholderText() == '<multiple values — edit to apply to all>'
+    assert panel.description_edit.placeholderText() == panel.track_edit.placeholderText()
+    panel.set_field_values({'track_number': 8, 'description': 'One description'})
+    assert panel.track_edit.text() == '8'
+    assert panel.track_edit.placeholderText() == ''
+    assert panel.description_edit.placeholderText() == ''
+
+
+def test_clear_resets_editors_only(qtbot):
+    from audio_metadata_editor.metadata.model import Metadata
+    panel = MetadataPanel()
+    qtbot.addWidget(panel)
+    panel.set_metadata(Metadata(title='Title', track_number=3, series_number='2.5'))
+    panel.set_field_values({'artist': None}, mixed_fields={'artist'})
+    panel.artwork_label.setText('Artwork state owned by caller')
+    panel.id3v1_comment_edit.setEnabled(False)
+    panel.clear_metadata()
+    assert panel.collect_metadata() == Metadata()
+    assert all(getattr(panel, name).placeholderText() == '' for name, _ in FIELDS)
+    assert panel.artwork_label.text() == 'Artwork state owned by caller'
+    assert not panel.id3v1_comment_edit.isEnabled()
+
+
+def test_panel_does_not_collect_or_render_artwork(qtbot):
+    from audio_metadata_editor.metadata.model import Metadata
+    panel = MetadataPanel()
+    qtbot.addWidget(panel)
+    panel.artwork_label.setText('Caller preview')
+    panel.set_metadata(Metadata(title='Title', artwork=b'cover', artwork_mime='image/png'))
+    assert panel.artwork_label.text() == 'Caller preview'
+    assert panel.collect_metadata().artwork is None
+    assert panel.collect_metadata().artwork_mime == ''

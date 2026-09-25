@@ -208,7 +208,7 @@ Refactoring should be incremental and driven by concrete requirements or testing
 
 `ui/dialogs/paste_fields_dialog.py` owns only the supplied field checkboxes and selection controls. `MainWindow` retains remembered choices, clipboard data, pending metadata/artwork application, previews, and saving. Rejection is distinct from accepting an empty selection.
 
-`ui/metadata_panel.py` owns only construction and layout of the metadata editors, artwork label, and Choose/Remove Artwork buttons. Its controls are exposed using their existing attribute names. `MainWindow` retains references to those same controls, connects their signals, and owns population, collection, editing state, artwork-preview policy, coordination, and persistence. Save Changes remains in the toolbar. This is intentionally an incremental extraction; no editing behavior moves into `MetadataPanel`.
+`ui/metadata_panel.py` constructs the editing controls and provides `set_metadata`, `collect_metadata`, `clear_metadata`, and partial `set_field_values` presentation methods. These methods cover editor values only: population suppresses widget signals, numeric collection preserves the existing blank/invalid-to-None conversion, and series numbers remain strings. MainWindow supplies common/mixed decisions and attaches pending artwork to collected metadata. It retains signal wiring, validation warnings, capabilities, artwork rendering/intent, editing state, saved baselines, coordination, and persistence. Control attributes remain available for those responsibilities and existing integration tests. This is an incremental presentation extraction, not editing-state ownership. Save Changes remains in the toolbar.
 
 ## 10. File List
 

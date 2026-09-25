@@ -281,84 +281,12 @@ class MainWindow(QMainWindow):
             self._populate_root()
 
     def _show_metadata(self, metadata):
-        widgets = (
-            self.title_edit,
-            self.artist_edit,
-            self.album_edit,
-            self.album_artist_edit,
-            self.genre_edit,
-            self.track_edit,
-            self.track_total_edit,
-            self.disc_edit,
-            self.disc_total_edit,
-            self.narrator_edit,
-            self.series_edit,
-            self.series_number_edit,
-            self.publisher_edit,
-            self.date_edit,
-            self.composer_edit,
-            self.comment_edit,
-            self.id3v1_comment_edit,
-            self.copyright_edit,
-            self.description_edit,
-        )
-
-        blockers = [
-            QSignalBlocker(widget)
-            for widget in widgets
-        ]
-
-        for widget in widgets:
-            widget.setPlaceholderText("")
-
+        self.metadata_panel.set_metadata(metadata)
         self._show_artwork_preview(metadata.artwork)
-
-        self.title_edit.setText(metadata.title)
-        self.artist_edit.setText(metadata.artist)
-        self.album_edit.setText(metadata.album)
-        self.album_artist_edit.setText(metadata.album_artist)
-        self.genre_edit.setText(metadata.genre)
-
-        self.track_edit.setText(
-            str(metadata.track_number)
-            if metadata.track_number is not None
-            else ""
-        )
-
-        self.track_total_edit.setText(
-            str(metadata.track_total)
-            if metadata.track_total is not None
-            else ""
-        )
-
-        self.disc_edit.setText(
-            str(metadata.disc_number)
-            if metadata.disc_number is not None
-            else ""
-        )
-
-        self.disc_total_edit.setText(
-            str(metadata.disc_total)
-            if metadata.disc_total is not None
-            else ""
-        )
-
-        self.narrator_edit.setText(metadata.narrator)
-        self.series_edit.setText(metadata.series)
-        self.series_number_edit.setText(metadata.series_number)
-        self.publisher_edit.setText(metadata.publisher)
-        self.date_edit.setText(metadata.date)
-        self.composer_edit.setText(metadata.composer)
-        self.comment_edit.setText(metadata.comment)
-        self.id3v1_comment_edit.setText(metadata.id3v1_comment)
-
         self.id3v1_comment_edit.setEnabled(
             self.current_file is not None
             and self.current_file.suffix.lower() == ".mp3"
         )
-
-        self.copyright_edit.setText(metadata.copyright)
-        self.description_edit.setPlainText(metadata.description)
 
     def _file_selected(self, path):
         previous_selection = self.selected_files.copy()
@@ -424,42 +352,10 @@ class MainWindow(QMainWindow):
         self._update_multi_edit_visuals()
 
     def _get_edited_metadata(self):
-        from audio_metadata_editor.metadata import Metadata
-
-        def get_number(text):
-            text = text.strip()
-
-            if not text:
-                return None
-
-            try:
-                return int(text)
-            except ValueError:
-                return None
-
-        return Metadata(
-            title=self.title_edit.text(),
-            artist=self.artist_edit.text(),
-            album=self.album_edit.text(),
-            album_artist=self.album_artist_edit.text(),
-            genre=self.genre_edit.text(),
-            track_number=get_number(self.track_edit.text()),
-            track_total=get_number(self.track_total_edit.text()),
-            disc_number=get_number(self.disc_edit.text()),
-            disc_total=get_number(self.disc_total_edit.text()),
-            narrator=self.narrator_edit.text(),
-            series=self.series_edit.text(),
-            series_number=self.series_number_edit.text(),
-            publisher=self.publisher_edit.text(),
-            date=self.date_edit.text(),
-            composer=self.composer_edit.text(),
-            comment=self.comment_edit.text(),
-            id3v1_comment=self.id3v1_comment_edit.text(),
-            copyright=self.copyright_edit.text(),
-            description=self.description_edit.toPlainText(),
-            artwork=self.pending_artwork,
-            artwork_mime=self.pending_artwork_mime,
-        )
+        metadata = self.metadata_panel.collect_metadata()
+        metadata.artwork = self.pending_artwork
+        metadata.artwork_mime = self.pending_artwork_mime
+        return metadata
 
     def _save_changes(self):
         if not self._validate_numeric_fields():
@@ -862,54 +758,14 @@ class MainWindow(QMainWindow):
         self.multi_edit_fields.clear()
         self._update_multi_edit_visuals()
 
-        fields = {
-            "title": self.title_edit,
-            "artist": self.artist_edit,
-            "album": self.album_edit,
-            "album_artist": self.album_artist_edit,
-            "genre": self.genre_edit,
-            "track_number": self.track_edit,
-            "track_total": self.track_total_edit,
-            "disc_number": self.disc_edit,
-            "disc_total": self.disc_total_edit,
-            "narrator": self.narrator_edit,
-            "series": self.series_edit,
-            "series_number": self.series_number_edit,
-            "publisher": self.publisher_edit,
-            "date": self.date_edit,
-            "composer": self.composer_edit,
-            "comment": self.comment_edit,
-            "id3v1_comment": self.id3v1_comment_edit,
-            "copyright": self.copyright_edit,
-            "description": self.description_edit,
-        }
-
-        for field, widget in fields.items():
-            value, is_common = self._common_metadata_value(
-                metadatas,
-                field,
-            )
-
-            widget.blockSignals(True)
-
-            if is_common:
-                text = "" if value is None else str(value)
-
-                if isinstance(widget, QPlainTextEdit):
-                    widget.setPlainText(text)
-                else:
-                    widget.setText(text)
-
-                widget.setPlaceholderText("")
-            else:
-                if isinstance(widget, QPlainTextEdit):
-                    widget.setPlainText("")
-                else:
-                    widget.setText("")
-
-                widget.setPlaceholderText("<multiple values — edit to apply to all>")
-
-            widget.blockSignals(False)
+        values = {}
+        mixed_fields = set()
+        for field in self.metadata_panel.field_names:
+            value, is_common = self._common_metadata_value(metadatas, field)
+            values[field] = value
+            if not is_common:
+                mixed_fields.add(field)
+        self.metadata_panel.set_field_values(values, mixed_fields=mixed_fields)
 
         artwork_values = [
             metadata.artwork
@@ -1209,53 +1065,11 @@ class MainWindow(QMainWindow):
         self._update_multi_edit_visuals()
 
     def _show_pasted_metadata(self, selected_fields):
-        fields = {
-            "title": self.title_edit,
-            "artist": self.artist_edit,
-            "album": self.album_edit,
-            "album_artist": self.album_artist_edit,
-            "genre": self.genre_edit,
-            "track_number": self.track_edit,
-            "track_total": self.track_total_edit,
-            "disc_number": self.disc_edit,
-            "disc_total": self.disc_total_edit,
-            "narrator": self.narrator_edit,
-            "series": self.series_edit,
-            "series_number": self.series_number_edit,
-            "publisher": self.publisher_edit,
-            "date": self.date_edit,
-            "composer": self.composer_edit,
-            "comment": self.comment_edit,
-            "id3v1_comment": self.id3v1_comment_edit,
-            "copyright": self.copyright_edit,
-            "description": self.description_edit,
-        }
-
-        for field in selected_fields:
-            widget = fields.get(field)
-
-            if widget is None:
-                continue
-
-            value = getattr(
-                self.metadata_clipboard,
-                field,
-            )
-
-            widget.blockSignals(True)
-
-            widget.setPlaceholderText("")
-
-            if isinstance(widget, QPlainTextEdit):
-                widget.setPlainText(
-                    "" if value is None else str(value)
-                )
-            else:
-                widget.setText(
-                    "" if value is None else str(value)
-                )
-
-            widget.blockSignals(False)
+        self.metadata_panel.set_field_values({
+            field: getattr(self.metadata_clipboard, field)
+            for field in selected_fields
+            if field in self.metadata_panel.field_names
+        })
 
     def _create_shortcuts(self):
         QShortcut(
@@ -1382,17 +1196,7 @@ class MainWindow(QMainWindow):
         if self.current_file == path and self.current_metadata is not None:
             setattr(self.current_metadata, field, saved_value)
             if len(self.selected_files) == 1:
-                widget = {
-                    "track_number": self.track_edit,
-                    "title": self.title_edit,
-                    "artist": self.artist_edit,
-                    "album": self.album_edit,
-                    "series": self.series_edit,
-                    "series_number": self.series_number_edit,
-                    "narrator": self.narrator_edit,
-                }[field]
-                with QSignalBlocker(widget):
-                    widget.setText("" if saved_value is None else str(saved_value))
+                self.metadata_panel.set_field_values({field: saved_value})
         self.file_list.update_file_metadata(path, metadata)
         self._update_dirty_indicators()
 
@@ -1439,8 +1243,7 @@ class MainWindow(QMainWindow):
     def _refresh_selected_tracks(self):
         metadatas = [read_metadata(Path(path)) for path in self.selected_files]
         value, common = self._common_metadata_value(metadatas, "track_number")
-        with QSignalBlocker(self.track_edit):
-            self.track_edit.setText(str(value) if common and value is not None else "")
-            self.track_edit.setPlaceholderText(
-                "" if common else "<multiple values — edit to apply to all>"
-            )
+        self.metadata_panel.set_field_values(
+            {"track_number": value},
+            mixed_fields=() if common else {"track_number"},
+        )
