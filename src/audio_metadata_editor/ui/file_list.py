@@ -88,15 +88,27 @@ class EnterNavigationDelegate(QStyledItemDelegate):
             if item is not None and filename_item is not None:
                 path = filename_item.data(256)
                 if path:
+                    view.cell_save_succeeded = True
                     self.save_cell_requested.emit(
                         str(path),
                         column,
                         item.text(),
                     )
 
+            if not view.cell_save_succeeded:
+                return True
+
             # Stop at the bottom; do not wrap around.
             next_row = row + 1
             if next_row < view.rowCount():
+                next_path = view.item(next_row, 0).data(256)
+                view.advance_allowed = True
+                view.advance_requested.emit(next_path)
+                if not view.advance_allowed:
+                    return True
+                # Saving pending panel changes may reorder the table.
+                next_row = next((r for r in range(view.rowCount())
+                                 if view.item(r, 0).data(256) == next_path), next_row)
                 next_index = view.model().index(next_row, column)
 
                 view.selectionModel().setCurrentIndex(
@@ -118,6 +130,7 @@ class EnterNavigationDelegate(QStyledItemDelegate):
         return super().eventFilter(editor, event)
 
 class FileList(QTableWidget):
+    advance_requested = Signal(str)
     file_selected = Signal(str)
     files_selected = Signal(list)
     metadata_cell_edited = Signal(str, int, str)

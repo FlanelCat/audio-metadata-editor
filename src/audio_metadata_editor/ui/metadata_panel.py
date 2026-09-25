@@ -1,4 +1,4 @@
-from PySide6.QtCore import Qt, QSignalBlocker
+from PySide6.QtCore import Qt, QSignalBlocker, Signal
 from PySide6.QtWidgets import (
     QFormLayout,
     QLabel,
@@ -14,6 +14,9 @@ from ..metadata.model import Metadata
 
 class MetadataPanel(QWidget):
     """Present and collect editor values; editing state belongs to MainWindow."""
+
+    field_edited = Signal(str)
+    values_changed = Signal()
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -106,6 +109,26 @@ class MetadataPanel(QWidget):
             "copyright": self.copyright_edit,
             "description": self.description_edit,
         }
+
+        for field, widget in self._editors.items():
+            if isinstance(widget, QPlainTextEdit):
+                # Description retains its existing textChanged tracking semantics.
+                widget.textChanged.connect(
+                    lambda field=field: self.field_edited.emit(field)
+                )
+            else:
+                widget.textEdited.connect(
+                    lambda text, field=field: self.field_edited.emit(field)
+                )
+            # Connect after edit forwarding so intent precedes visual refresh.
+            widget.textChanged.connect(lambda *args: self.values_changed.emit())
+
+    def set_highlighted_fields(self, fields):
+        """Render supplied edit intent without owning or changing it."""
+        for field, widget in self._editors.items():
+            widget.setStyleSheet(
+                "background-color: #fff3cd; color: black;" if field in fields else ""
+            )
 
     @property
     def field_names(self):

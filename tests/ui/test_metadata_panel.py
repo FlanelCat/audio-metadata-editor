@@ -167,3 +167,66 @@ def test_panel_does_not_collect_or_render_artwork(qtbot):
     assert panel.artwork_label.text() == 'Caller preview'
     assert panel.collect_metadata().artwork is None
     assert panel.collect_metadata().artwork_mime == ''
+
+
+# Explicit expectations protect logical identifiers independently of the panel map.
+SIGNAL_FIELDS = [
+    (name, {'track_edit': 'track_number', 'disc_edit': 'disc_number'}.get(
+        name, name.removesuffix('_edit')))
+    for name, _ in FIELDS
+]
+
+
+def test_all_editor_signal_identifiers_and_order(qtbot):
+    panel = MetadataPanel()
+    qtbot.addWidget(panel)
+    events = []
+    panel.field_edited.connect(lambda field: events.append(('edited', field)))
+    panel.values_changed.connect(lambda: events.append(('changed',)))
+    for name, field in SIGNAL_FIELDS:
+        events.clear()
+        qtbot.keyClicks(getattr(panel, name), '7')
+        assert events == [('edited', field), ('changed',)]
+
+
+def test_programmatic_signal_semantics(qtbot):
+    panel = MetadataPanel()
+    qtbot.addWidget(panel)
+    events = []
+    panel.field_edited.connect(lambda field: events.append(('edited', field)))
+    panel.values_changed.connect(lambda: events.append(('changed',)))
+    for name, _ in SIGNAL_FIELDS:
+        events.clear()
+        widget = getattr(panel, name)
+        if isinstance(widget, QPlainTextEdit):
+            widget.setPlainText('Description')
+            assert events == [('edited', 'description'), ('changed',)]
+        else:
+            widget.setText('Programmatic value')
+            assert events == [('changed',)]
+
+
+def test_population_keeps_semantic_signals_silent(qtbot):
+    from audio_metadata_editor.metadata.model import Metadata
+    panel = MetadataPanel()
+    qtbot.addWidget(panel)
+    events = []
+    panel.field_edited.connect(lambda field: events.append(field))
+    panel.values_changed.connect(lambda: events.append('changed'))
+    panel.set_metadata(Metadata(title='Loaded', track_number=3, description='Loaded'))
+    assert not events
+    panel.set_field_values({'title': 'Partial', 'description': None, 'track_number': None},
+                           mixed_fields={'description', 'track_number'})
+    assert not events
+    panel.clear_metadata()
+    assert not events
+
+
+def test_highlight_changes_and_reset(qtbot):
+    panel = MetadataPanel()
+    qtbot.addWidget(panel)
+    for highlighted in ({'title'}, {'track_number', 'description'}, {'artist'}, set()):
+        panel.set_highlighted_fields(highlighted)
+        for name, field in SIGNAL_FIELDS:
+            assert getattr(panel, name).styleSheet() == (
+                'background-color: #fff3cd; color: black;' if field in highlighted else '')

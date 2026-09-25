@@ -259,3 +259,9 @@ The user remains in control of changes to their audio files.
 Reading, browsing, selecting, and navigating are non-destructive operations.
 
 Writing metadata is an explicit operation.
+
+### Selection transitions and Enter navigation
+
+Pending metadata-panel edits are protected by Save / Discard / Cancel when changing between single-file and multi-file editing contexts, including when the old file remains selected. Cancel restores the previous selection and current cell; a failed Save keeps the pending context. Discard restores saved table values before loading the requested context.
+
+After a successful center-table Enter-save, advancing to the next row selects that file and displays its disk-backed metadata in the panel. If this would replace unrelated pending panel edits, the existing Unsaved Changes prompt runs after the field save: Save or Discard permits the advance, while Cancel keeps the previous context and stops the advance. The completed field save remains saved. Failed field saves do not advance; the final row does not wrap.

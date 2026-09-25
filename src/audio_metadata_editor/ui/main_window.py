@@ -4,6 +4,8 @@ from pathlib import Path
 from PySide6.QtCore import (
     Qt,
     QSignalBlocker,
+    QItemSelectionModel,
+    QPersistentModelIndex,
 )
 from PySide6.QtGui import (
     QImage,
@@ -47,6 +49,7 @@ class MainWindow(QMainWindow):
         self.root_path = None
         self.current_file = None
         self.selected_files = []
+        self._context_index = QPersistentModelIndex()
         self.multi_edit_fields = set()
         self.current_metadata = None
         self.pending_artwork = None
@@ -114,7 +117,7 @@ class MainWindow(QMainWindow):
         self.file_list.metadata_cell_edited.connect(
             self._metadata_cell_edited
         )
-        self.file_list.file_selected.connect(self._file_selected)
+        self.file_list.advance_requested.connect(self._advance_table_row)
         self.file_list.files_selected.connect(self._files_selected)
         splitter.addWidget(self.file_list)
 
@@ -156,22 +159,58 @@ class MainWindow(QMainWindow):
         self._connect_multi_edit_tracking()
 
     def _files_selected(self, paths):
-        if len(paths) <= 1:
-            self.statusBar().clearMessage()
-            return
+        if set(paths) == set(self.selected_files):
+            return True
+        if not self._guard_selection_change():
+            return False
+        if len(paths) == 1:
+            self._load_single_file(paths[0])
+        elif paths:
+            self.selected_files = list(paths)
+            self.multi_edit_artwork = False
+            self.artwork_edited = False
+            self.pending_artwork = None
+            self.pending_artwork_mime = ""
+            self._show_common_metadata([read_metadata(Path(path)) for path in paths])
+        self._context_index = QPersistentModelIndex(self.file_list.currentIndex())
+        return True
 
-        self.selected_files = paths
-
-        metadatas = [
-            read_metadata(Path(path))
-            for path in paths
-        ]
-
-        self.statusBar().showMessage(
-            f"{len(paths)} files selected"
+    def _guard_selection_change(self):
+        if not self._has_unsaved_changes():
+            return True
+        reply = QMessageBox.question(
+            self, "Unsaved Changes",
+            "You have unsaved changes to the selected files.\n\n"
+            "Do you want to save them before switching files?",
+            QMessageBox.StandardButton.Save | QMessageBox.StandardButton.Discard
+            | QMessageBox.StandardButton.Cancel,
+            QMessageBox.StandardButton.Save,
         )
+        if reply == QMessageBox.StandardButton.Save:
+            self._save_changes()
+            if not self._has_unsaved_changes():
+                return True
+        elif reply == QMessageBox.StandardButton.Discard:
+            self._undo_changes()
+            return True
+        with QSignalBlocker(self.file_list):
+            self.file_list.select_files(self.selected_files)
+            if self._context_index.isValid():
+                self.file_list.setCurrentCell(
+                    self._context_index.row(), self._context_index.column(),
+                    QItemSelectionModel.SelectionFlag.NoUpdate,
+                )
+        return False
 
-        self._show_common_metadata(metadatas)
+    def _advance_table_row(self, path):
+        self.file_list.advance_allowed = self._files_selected([path])
+        if self.file_list.advance_allowed:
+            with QSignalBlocker(self.file_list):
+                self.file_list.select_files([path])
+                row = next(r for r in range(self.file_list.rowCount())
+                           if self.file_list.item(r, 0).data(256) == path)
+                self._context_index = QPersistentModelIndex(
+                    self.file_list.model().index(row, self.file_list.currentColumn()))
 
     def _create_status_bar(self):
         self.status_label = QLabel("No folder selected")
@@ -289,55 +328,16 @@ class MainWindow(QMainWindow):
         )
 
     def _file_selected(self, path):
-        previous_selection = self.selected_files.copy()
+        # Retain the direct single-file entry point used by explicit reloads.
+        if set(self.selected_files) != {path} and not self._guard_selection_change():
+            return
+        self._load_single_file(path)
 
+    def _load_single_file(self, path):
         new_file = Path(path)
-        if (
-            self.current_file is not None
-            and new_file != self.current_file
-        ):
-            if self._has_unsaved_changes():
-                if len(self.selected_files) > 1:
-                    field_names = self._multi_edit_field_names()
-
-                    message = (
-                        f"You have unsaved changes to "
-                        f"{len(self.selected_files)} selected files.\n\n"
-                        f"Fields to be changed: {', '.join(field_names)}.\n\n"
-                        "Do you want to save them before switching files?"
-                    )
-                else:
-                    message = (
-                        f"You have unsaved changes to:\n\n"
-                        f"{self.current_file.name}\n\n"
-                        "Do you want to save them before switching files?"
-                    )
-
-                reply = QMessageBox.question(
-                    self,
-                    "Unsaved Changes",
-                    message,
-                    QMessageBox.StandardButton.Save
-                    | QMessageBox.StandardButton.Discard
-                    | QMessageBox.StandardButton.Cancel,
-                    QMessageBox.StandardButton.Save,
-                )
-
-                if reply == QMessageBox.StandardButton.Save:
-                    self._save_changes()
-
-                    if self._has_unsaved_changes():
-                        return
-
-                elif reply == QMessageBox.StandardButton.Cancel:
-                    # Restore selection without reloading over pending panel edits.
-                    with QSignalBlocker(self.file_list):
-                        self.file_list.select_files(previous_selection)
-                    self.selected_files = previous_selection.copy()
-                    return
-
         self.selected_files = [path]
         self.current_file = new_file
+        self._context_index = QPersistentModelIndex(self.file_list.currentIndex())
 
         metadata = read_metadata(new_file)
         self.current_metadata = metadata
@@ -783,89 +783,16 @@ class MainWindow(QMainWindow):
         self.artwork_label.setText(artwork_text)
 
     def _connect_multi_edit_tracking(self):
-        fields = {
-            "title": self.title_edit,
-            "artist": self.artist_edit,
-            "album": self.album_edit,
-            "album_artist": self.album_artist_edit,
-            "genre": self.genre_edit,
-            "track_number": self.track_edit,
-            "track_total": self.track_total_edit,
-            "disc_number": self.disc_edit,
-            "disc_total": self.disc_total_edit,
-            "narrator": self.narrator_edit,
-            "series": self.series_edit,
-            "series_number": self.series_number_edit,
-            "publisher": self.publisher_edit,
-            "date": self.date_edit,
-            "composer": self.composer_edit,
-            "comment": self.comment_edit,
-            "id3v1_comment": self.id3v1_comment_edit,
-            "copyright": self.copyright_edit,
-            "description": self.description_edit,
-        }
+        self.metadata_panel.field_edited.connect(self._metadata_field_edited)
+        self.metadata_panel.values_changed.connect(self._update_dirty_indicators)
 
-        for field, widget in fields.items():
-            if isinstance(widget, QPlainTextEdit):
-                widget.textChanged.connect(
-                    lambda field=field: (
-                        self.multi_edit_fields.add(field),
-                        self._update_multi_edit_visuals(),
-                    )
-                    if len(self.selected_files) > 1
-                    else None
-                )
-            else:
-                widget.textEdited.connect(
-                    lambda text, field=field: (
-                        self.multi_edit_fields.add(field),
-                        self._update_multi_edit_visuals(),
-                    )
-                    if len(self.selected_files) > 1
-                    else None
-                )
-
-        # Refresh filename indicators when Metadata-panel fields change.
-        for widget in fields.values():
-            if isinstance(widget, QPlainTextEdit):
-                widget.textChanged.connect(
-                    self._update_dirty_indicators
-                )
-            else:
-                widget.textChanged.connect(
-                    self._update_dirty_indicators
-                )
+    def _metadata_field_edited(self, field):
+        if len(self.selected_files) > 1:
+            self.multi_edit_fields.add(field)
+            self._update_multi_edit_visuals()
 
     def _update_multi_edit_visuals(self):
-        fields = {
-            "title": self.title_edit,
-            "artist": self.artist_edit,
-            "album": self.album_edit,
-            "album_artist": self.album_artist_edit,
-            "genre": self.genre_edit,
-            "track_number": self.track_edit,
-            "track_total": self.track_total_edit,
-            "disc_number": self.disc_edit,
-            "disc_total": self.disc_total_edit,
-            "narrator": self.narrator_edit,
-            "series": self.series_edit,
-            "series_number": self.series_number_edit,
-            "publisher": self.publisher_edit,
-            "date": self.date_edit,
-            "composer": self.composer_edit,
-            "comment": self.comment_edit,
-            "id3v1_comment": self.id3v1_comment_edit,
-            "copyright": self.copyright_edit,
-            "description": self.description_edit,
-        }
-
-        for field, widget in fields.items():
-            if field in self.multi_edit_fields:
-                widget.setStyleSheet(
-                    "background-color: #fff3cd; color: black;"
-                )
-            else:
-                widget.setStyleSheet("")
+        self.metadata_panel.set_highlighted_fields(self.multi_edit_fields)
 
         if len(self.selected_files) > 1:
             field_count = len(self.multi_edit_fields)
@@ -1150,6 +1077,7 @@ class MainWindow(QMainWindow):
         self.file_list.set_dirty_files(dirty_paths)
 
     def _save_table_cell(self, path_string, column, value):
+        self.file_list.cell_save_succeeded = False
         path = Path(path_string)
 
         fields = {
@@ -1170,6 +1098,7 @@ class MainWindow(QMainWindow):
             if field == "track_number":
                 value = int(value) if value.strip() else None
             self._save_metadata_field(path, field, value)
+            self.file_list.cell_save_succeeded = True
 
         except Exception as exc:
             QMessageBox.critical(

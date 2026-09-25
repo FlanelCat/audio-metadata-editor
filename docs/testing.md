@@ -247,3 +247,9 @@ git diff --check
 `tests/ui/test_panel_preservation.py` uses temporary MP3/M4B fixture copies seeded with multi-valued artists, comments, custom fields, unknown tags, numeric pairs, and multiple covers. It verifies single-file and multi-file Title edits preserve unrelated raw metadata, pair components remain isolated, restored text fields are not rewritten, and explicit artwork replacement/removal remains distinct from unchanged artwork. Existing paste tests protect pending artwork preview and explicit-save behavior.
 
 The initial preservation regression run reproduced 24 failures and 8 passes: both formats lost extra supported values and covers during Title-only saves, and clearing a number removed its untouched total. Tested unknown tags and unchanged numeric pairs already survived.
+
+## Selection synchronization regressions
+
+`tests/ui/test_selection_sync.py` uses temporary MP3/M4B fixture copies to cover guarded single/multi-selection transitions, Save/Discard/Cancel, failed prompt saves, clean transitions, repeated Enter-follow navigation, sorting, and unrelated pending panel edits during Enter-save. The initial regression run reproduced eight failures: six missing selection prompts and two stale-panel Enter advances. Existing table tests retain field-isolation/end-of-table assertions and now expect the panel to follow the active row after an accepted advance.
+
+Desktop verification should include Ctrl/Shift multi-selection with different anchors, collapsing onto the original file, all three prompt choices, repeated Enter editing in sorted tables, and cancelling an advance with unrelated panel edits pending.

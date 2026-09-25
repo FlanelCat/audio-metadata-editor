@@ -61,8 +61,9 @@ def test_enter_saves_and_advances(window, qtbot):
         table.horizontalHeader().sectionSizeHint(2), table.sizeHintForColumn(2)))
     before.title = saved.title
     assert saved == before
-    assert window.current_metadata.title == saved.title
-    assert window.title_edit.text() == saved.title
+    assert window.current_metadata == read_metadata(window.current_file)
+    assert window.current_file == Path(table.item(1, 0).data(256))
+    assert window.title_edit.text() == window.current_metadata.title
     assert not window._has_unsaved_changes()
     assert not table.item(0, 0).text().startswith('*')
     assert table.currentColumn() == 2
@@ -100,12 +101,14 @@ def test_other_columns(window, qtbot, column, field, value):
     qtbot.wait(10)
     expected = int(value) if column == 1 else value
     assert getattr(read_metadata(path), field) == expected
-    assert getattr(window.current_metadata, field) == expected
+    assert window.current_metadata == read_metadata(window.current_file)
+    assert window.current_file == Path(window.file_list.item(1, 0).data(256))
     assert not window._has_unsaved_changes()
     assert window.file_list.currentColumn() == column
 
 
-def test_panel_pending_changes_survive_table_save(window, qtbot):
+def test_panel_pending_changes_survive_table_save(window, qtbot, monkeypatch):
+    monkeypatch.setattr(QMessageBox, "question", lambda *a: QMessageBox.Cancel)
     path = window.current_file
     before = read_metadata(path)
     window.artist_edit.setFocus()
@@ -307,3 +310,38 @@ def test_panel_multi_save_normalized_table(window, qtbot, monkeypatch):
         assert not window.file_list.item(row, 0).text().startswith('*')
     assert window.current_metadata == read_metadata(window.current_file)
     assert not window._has_unsaved_changes()
+
+
+@pytest.mark.parametrize('multiple', [False, True])
+@pytest.mark.parametrize('field,editor_name', [('title', 'title_edit'),
+                                             ('description', 'description_edit')])
+def test_panel_signal_intent_and_pending_save(window, qtbot, monkeypatch, multiple,
+                                            field, editor_name):
+    from audio_metadata_editor.metadata.model import Metadata
+    paths = [Path(window.file_list.item(row, 0).data(256)) for row in range(2)]
+    if multiple:
+        window.file_list.select_files([str(path) for path in paths])
+        window._show_common_metadata([Metadata(title='A', description='A'),
+                                      Metadata(title='B', description='B')])
+        assert getattr(window, editor_name).placeholderText()
+    assert not window.multi_edit_fields
+    before = {path: path.read_bytes() for path in paths}
+    observations = []
+    window.metadata_panel.values_changed.connect(
+        lambda: observations.append(set(window.multi_edit_fields)))
+    getattr(window, editor_name).selectAll()
+    qtbot.keyClicks(getattr(window, editor_name), 'Pending')
+    assert observations and all(intent == ({field} if multiple else set())
+                                for intent in observations)
+    assert window.multi_edit_fields == ({field} if multiple else set())
+    assert window._has_unsaved_changes()
+    assert all(window.file_list.item(row, 0).text().startswith('*')
+               for row in range(2 if multiple else 1))
+    assert {path: path.read_bytes() for path in paths} == before
+    monkeypatch.setattr(QMessageBox, 'information', lambda *args: None)
+    window._save_changes()
+    for path in paths if multiple else paths[:1]:
+        assert getattr(read_metadata(path), field) == 'Pending'
+    assert not window._has_unsaved_changes()
+    assert not window.multi_edit_fields
+    assert getattr(window, editor_name).styleSheet() == ''
