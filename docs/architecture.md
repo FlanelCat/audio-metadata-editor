@@ -82,6 +82,7 @@ src/audio_metadata_editor/
 └── ui/
     ├── __init__.py
     ├── file_list.py
+    ├── metadata_panel.py
     └── main_window.py
 ```
 
@@ -206,6 +207,8 @@ Logic that can be expressed independently of Qt widgets should preferably move t
 Refactoring should be incremental and driven by concrete requirements or testing benefits.
 
 `ui/dialogs/paste_fields_dialog.py` owns only the supplied field checkboxes and selection controls. `MainWindow` retains remembered choices, clipboard data, pending metadata/artwork application, previews, and saving. Rejection is distinct from accepting an empty selection.
+
+`ui/metadata_panel.py` owns only construction and layout of the metadata editors, artwork label, and Choose/Remove Artwork buttons. Its controls are exposed using their existing attribute names. `MainWindow` retains references to those same controls, connects their signals, and owns population, collection, editing state, artwork-preview policy, coordination, and persistence. Save Changes remains in the toolbar. This is intentionally an incremental extraction; no editing behavior moves into `MetadataPanel`.
 
 ## 10. File List
 
