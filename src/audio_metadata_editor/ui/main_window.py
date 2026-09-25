@@ -1,3 +1,4 @@
+from dataclasses import fields as metadata_fields
 from pathlib import Path
 
 from PySide6.QtCore import (
@@ -52,6 +53,8 @@ class MainWindow(QMainWindow):
         self.current_metadata = None
         self.pending_artwork = None
         self.pending_artwork_mime = ""
+        # Replacement/removal intent cannot be inferred from the first cover alone.
+        self.artwork_edited = False
         self.multi_edit_artwork = False
         self.metadata_clipboard = None
         self.paste_metadata_fields = set()
@@ -353,22 +356,7 @@ class MainWindow(QMainWindow):
         for widget in widgets:
             widget.setPlaceholderText("")
 
-        if metadata.artwork:
-            image = QImage.fromData(metadata.artwork)
-
-            if not image.isNull():
-                pixmap = QPixmap.fromImage(image)
-                self.artwork_label.setPixmap(
-                    pixmap.scaled(
-                        self.artwork_label.size(),
-                        Qt.AspectRatioMode.KeepAspectRatio,
-                        Qt.TransformationMode.SmoothTransformation,
-                    )
-                )
-            else:
-                self.artwork_label.clear()
-        else:
-            self.artwork_label.clear()
+        self._show_artwork_preview(metadata.artwork)
 
         self.title_edit.setText(metadata.title)
         self.artist_edit.setText(metadata.artist)
@@ -459,7 +447,9 @@ class MainWindow(QMainWindow):
                         return
 
                 elif reply == QMessageBox.StandardButton.Cancel:
-                    self.file_list.select_files(previous_selection)
+                    # Restore selection without reloading over pending panel edits.
+                    with QSignalBlocker(self.file_list):
+                        self.file_list.select_files(previous_selection)
                     self.selected_files = previous_selection.copy()
                     return
 
@@ -470,6 +460,7 @@ class MainWindow(QMainWindow):
         self.current_metadata = metadata
         self.pending_artwork = metadata.artwork
         self.pending_artwork_mime = metadata.artwork_mime
+        self.artwork_edited = False
 
         self.multi_edit_fields.clear()
         self.multi_edit_artwork = False
@@ -552,12 +543,17 @@ class MainWindow(QMainWindow):
                             getattr(edited_metadata, field),
                         )
 
-                    if self.multi_edit_artwork:
-                        artwork = self.pending_artwork
-                        artwork_mime = self.pending_artwork_mime
-                    else:
-                        artwork = metadata.artwork
-                        artwork_mime = metadata.artwork_mime
+                    artwork_options = {}
+                    if self.multi_edit_artwork and (
+                        self.pending_artwork is not None or metadata.artwork is not None
+                    ):
+                        artwork_options = {
+                            "artwork": self.pending_artwork,
+                            "artwork_mime": self.pending_artwork_mime,
+                        }
+
+                    if not self.multi_edit_fields and not artwork_options:
+                        continue
 
                     suffix = path.suffix.lower()
 
@@ -565,15 +561,15 @@ class MainWindow(QMainWindow):
                         write_mp3_metadata(
                             path,
                             metadata,
-                            artwork,
-                            artwork_mime,
+                            fields=self.multi_edit_fields,
+                            **artwork_options,
                         )
                     elif suffix == ".m4b":
                         write_m4b_metadata(
                             path,
                             metadata,
-                            artwork,
-                            artwork_mime,
+                            fields=self.multi_edit_fields,
+                            **artwork_options,
                         )
 
                     metadata = read_metadata(path)
@@ -594,6 +590,7 @@ class MainWindow(QMainWindow):
 
             self.multi_edit_fields.clear()
             self.multi_edit_artwork = False
+            self.artwork_edited = False
 
             QMessageBox.information(
                 self,
@@ -629,6 +626,21 @@ class MainWindow(QMainWindow):
             return
 
         metadata = self._get_edited_metadata()
+        changed_fields = {
+            field.name for field in metadata_fields(metadata)
+            if field.name not in {"artwork", "artwork_mime"}
+            and getattr(metadata, field.name) != getattr(self.current_metadata, field.name)
+        }
+        artwork_options = {}
+        if (
+            self.artwork_edited
+            or self.pending_artwork != self.current_metadata.artwork
+            or self.pending_artwork_mime != self.current_metadata.artwork_mime
+        ):
+            artwork_options = {
+                "artwork": self.pending_artwork,
+                "artwork_mime": self.pending_artwork_mime,
+            }
 
         try:
             suffix = self.current_file.suffix.lower()
@@ -637,16 +649,16 @@ class MainWindow(QMainWindow):
                 write_mp3_metadata(
                     self.current_file,
                     metadata,
-                    self.pending_artwork,
-                    self.pending_artwork_mime,
+                    fields=changed_fields,
+                    **artwork_options,
                 )
 
             elif suffix == ".m4b":
                 write_m4b_metadata(
                     self.current_file,
                     metadata,
-                    self.pending_artwork,
-                    self.pending_artwork_mime,
+                    fields=changed_fields,
+                    **artwork_options,
                 )
 
             else:
@@ -667,6 +679,7 @@ class MainWindow(QMainWindow):
         self.current_metadata = metadata
         self.pending_artwork = metadata.artwork
         self.pending_artwork_mime = metadata.artwork_mime
+        self.artwork_edited = False
         self._show_metadata(metadata)
 
         self.file_list.update_file_metadata(
@@ -696,7 +709,8 @@ class MainWindow(QMainWindow):
         loaded = self.current_metadata
 
         return (
-            edited.title != loaded.title
+            self.artwork_edited
+            or edited.title != loaded.title
             or edited.artist != loaded.artist
             or edited.album != loaded.album
             or edited.album_artist != loaded.album_artist
@@ -732,6 +746,7 @@ class MainWindow(QMainWindow):
 
             self.multi_edit_fields.clear()
             self.multi_edit_artwork = False
+            self.artwork_edited = False
             self.pending_artwork = None
             self.pending_artwork_mime = ""
 
@@ -756,6 +771,7 @@ class MainWindow(QMainWindow):
 
             self.multi_edit_fields.clear()
             self.multi_edit_artwork = False
+            self.artwork_edited = False
 
             self.pending_artwork = self.current_metadata.artwork
             self.pending_artwork_mime = self.current_metadata.artwork_mime
@@ -802,6 +818,20 @@ class MainWindow(QMainWindow):
         else:
             event.ignore()
 
+    def _show_artwork_preview(self, artwork):
+        """Render artwork bytes, or clear the preview for absent/invalid artwork."""
+        self.artwork_label.clear()
+        if artwork:
+            image = QImage.fromData(artwork)
+            if not image.isNull():
+                self.artwork_label.setPixmap(
+                    QPixmap.fromImage(image).scaled(
+                        self.artwork_label.size(),
+                        Qt.AspectRatioMode.KeepAspectRatio,
+                        Qt.TransformationMode.SmoothTransformation,
+                    )
+                )
+
     def _choose_artwork(self):
         path, _ = QFileDialog.getOpenFileName(
             self,
@@ -827,26 +857,19 @@ class MainWindow(QMainWindow):
             return
 
         self.pending_artwork = artwork
+        self.artwork_edited = True
 
         if path.lower().endswith(".png"):
             self.pending_artwork_mime = "image/png"
         else:
             self.pending_artwork_mime = "image/jpeg"
 
-        pixmap = QPixmap.fromImage(image)
-
-        self.artwork_label.setPixmap(
-            pixmap.scaled(
-                self.artwork_label.size(),
-                Qt.AspectRatioMode.KeepAspectRatio,
-                Qt.TransformationMode.SmoothTransformation,
-            )
-        )
+        self._show_artwork_preview(artwork)
 
         if len(self.selected_files) > 1:
             self.multi_edit_artwork = True
             self._update_multi_edit_visuals()
-
+        self._update_dirty_indicators()
 
     def _remove_artwork(self):
         if self.current_metadata is None:
@@ -856,14 +879,15 @@ class MainWindow(QMainWindow):
         self.pending_artwork_mime = ""
 
         if len(self.selected_files) > 1:
-            self.multi_edit_artwork = True
-            self.artwork_label.clear()
-            self.artwork_label.setText(
-                "Artwork will be removed from all selected files"
+            self.multi_edit_artwork = any(
+                read_metadata(Path(path)).artwork is not None
+                for path in self.selected_files
             )
-            self.artwork_label.clear()
-            return
-        
+            self.artwork_edited = self.multi_edit_artwork
+        else:
+            self.artwork_edited = self.current_metadata.artwork is not None
+        self._show_artwork_preview(None)
+        self._update_multi_edit_visuals()
 
     def _common_metadata_value(self, metadatas, attribute):
         if not metadatas:
@@ -1193,6 +1217,7 @@ class MainWindow(QMainWindow):
             return
 
         if "artwork" in selected_fields:
+            self.artwork_edited = True
             self.pending_artwork = self.metadata_clipboard.artwork
             self.pending_artwork_mime = (
                 self.metadata_clipboard.artwork_mime
@@ -1201,17 +1226,7 @@ class MainWindow(QMainWindow):
                 self.multi_edit_artwork = True
 
             # Preview pending artwork without saving or repopulating text edits.
-            self.artwork_label.clear()
-            if self.pending_artwork:
-                image = QImage.fromData(self.pending_artwork)
-                if not image.isNull():
-                    self.artwork_label.setPixmap(
-                        QPixmap.fromImage(image).scaled(
-                            self.artwork_label.size(),
-                            Qt.AspectRatioMode.KeepAspectRatio,
-                            Qt.TransformationMode.SmoothTransformation,
-                        )
-                    )
+            self._show_artwork_preview(self.pending_artwork)
 
             selected_fields.remove("artwork")
 
@@ -1351,8 +1366,14 @@ class MainWindow(QMainWindow):
         dirty_paths = []
 
         if len(self.selected_files) > 1:
-            if self.multi_edit_fields or self.multi_edit_artwork:
+            if self.multi_edit_fields:
                 dirty_paths = self.selected_files.copy()
+            elif self.multi_edit_artwork:
+                dirty_paths = [
+                    path for path in self.selected_files
+                    if self.pending_artwork is not None
+                    or read_metadata(Path(path)).artwork is not None
+                ]
 
         elif self.current_file is not None and self._has_unsaved_changes():
             dirty_paths = [self.current_file]

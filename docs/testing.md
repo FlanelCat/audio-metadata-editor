@@ -241,3 +241,9 @@ git diff --check
 ## 15. File Table Column Sizing
 
 `tests/ui/test_column_sizing.py` checks all columns against Qt header and cell size hints, including empty tables, growth and shrinkage, values beyond the default 1000-row sampling limit, metadata refreshes, and switching to an empty directory. File-loading tests use temporary fixture copies and verify that sizing does not modify audio files. Existing UI save tests also check sizing after Enter-save, metadata-panel Save Changes, and Auto-number Tracks.
+
+## 16. Metadata-panel Save Preservation
+
+`tests/ui/test_panel_preservation.py` uses temporary MP3/M4B fixture copies seeded with multi-valued artists, comments, custom fields, unknown tags, numeric pairs, and multiple covers. It verifies single-file and multi-file Title edits preserve unrelated raw metadata, pair components remain isolated, restored text fields are not rewritten, and explicit artwork replacement/removal remains distinct from unchanged artwork. Existing paste tests protect pending artwork preview and explicit-save behavior.
+
+The initial preservation regression run reproduced 24 failures and 8 passes: both formats lost extra supported values and covers during Title-only saves, and clearing a number removed its untouched total. Tested unknown tags and unchanged numeric pairs already survived.

@@ -94,6 +94,8 @@ Metadata-panel save actions include:
 
 Navigation between metadata-panel fields must not implicitly save metadata.
 
+Save Changes writes only fields differing from the saved baseline for one file, or explicitly selected/edited fields for multiple files. Track/disc numbers and totals are independent: changing or clearing one component preserves the other. Unchanged artwork is omitted from the write; choosing or pasting artwork explicitly requests replacement, and removing artwork (including pasting a clipboard with no artwork) requests removal. Explicit replacement applies even when its bytes match the displayed first cover, because a file may contain additional covers. Successful saves synchronize from disk readback.
+
 Closing the application, changing directories, selecting another file, or performing another operation that would discard pending metadata-panel edits must warn the user when unsaved changes exist.
 
 ### Auto-number Tracks
@@ -119,6 +121,8 @@ This requirement is particularly important because audiobook files may contain m
 Embedded artwork must be readable and displayable.
 
 Existing artwork must be preserved unless the user explicitly modifies or removes it.
+
+Remove Artwork is a no-op for files with no saved artwork. It cancels a pending artwork addition on such files without leaving artwork-related dirty state. In a mixed selection, only files with saved artwork acquire pending removal; unrelated pending field edits remain intact. Artwork-only saves skip files where removal is a no-op.
 
 Editing unrelated metadata must not rewrite or remove artwork.
 

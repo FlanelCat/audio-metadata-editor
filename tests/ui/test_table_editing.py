@@ -232,10 +232,8 @@ def test_panel_save_finalizes_disk_state(window, qtbot, monkeypatch, field, widg
                 if button.text() == 'Save Changes')
     qtbot.mouseClick(save, Qt.MouseButton.LeftButton)
     saved = read_metadata(path)
-    # Existing full-write semantics remove a total when its number is absent.
+    # Panel saves retain an explicitly entered total even without a number.
     expected = int(value) if field != 'title' else value
-    if field.endswith('_total') and getattr(before, field.replace('_total', '_number')) is None:
-        expected = None
     assert getattr(saved, field) == expected
     setattr(before, field, expected)
     assert saved == before
