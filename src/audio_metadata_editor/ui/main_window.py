@@ -190,7 +190,7 @@ class MainWindow(QMainWindow):
         self.pending_artwork_mime = ""
         self.metadata_panel.clear_metadata()
         self._show_artwork_preview(None)
-        self.id3v1_comment_edit.setEnabled(False)
+        self.metadata_panel.set_id3v1_comment_enabled(False)
         self._update_multi_edit_visuals()
         self.statusBar().clearMessage()
 
@@ -356,7 +356,7 @@ class MainWindow(QMainWindow):
     def _show_metadata(self, metadata):
         self.metadata_panel.set_metadata(metadata)
         self._show_artwork_preview(metadata.artwork)
-        self.id3v1_comment_edit.setEnabled(
+        self.metadata_panel.set_id3v1_comment_enabled(
             self.current_file is not None
             and self.current_file.suffix.lower() == ".mp3"
         )
@@ -878,15 +878,8 @@ class MainWindow(QMainWindow):
         return field_names
 
     def _validate_numeric_fields(self):
-        fields = {
-            "Track": self.track_edit,
-            "Track Total": self.track_total_edit,
-            "Disc": self.disc_edit,
-            "Disc Total": self.disc_total_edit,
-        }
-
-        for name, widget in fields.items():
-            text = widget.text().strip()
+        for name, text in self.metadata_panel.numeric_field_texts().items():
+            text = text.strip()
 
             if not text:
                 continue
@@ -899,8 +892,7 @@ class MainWindow(QMainWindow):
                     "Invalid Number",
                     f"{name} must be a whole number.",
                 )
-                widget.setFocus()
-                widget.selectAll()
+                self.metadata_panel.focus_numeric_field(name)
                 return False
 
             if value < 0:
@@ -909,8 +901,7 @@ class MainWindow(QMainWindow):
                     "Invalid Number",
                     f"{name} cannot be negative.",
                 )
-                widget.setFocus()
-                widget.selectAll()
+                self.metadata_panel.focus_numeric_field(name)
                 return False
 
         return True

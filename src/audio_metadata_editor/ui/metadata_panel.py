@@ -123,6 +123,30 @@ class MetadataPanel(QWidget):
             # Connect after edit forwarding so intent precedes visual refresh.
             widget.textChanged.connect(lambda *args: self.values_changed.emit())
 
+    def numeric_field_texts(self):
+        """Return raw numeric text in validation order, keyed by display name."""
+        return {
+            "Track": self.track_edit.text(),
+            "Track Total": self.track_total_edit.text(),
+            "Disc": self.disc_edit.text(),
+            "Disc Total": self.disc_total_edit.text(),
+        }
+
+    def focus_numeric_field(self, name):
+        """Focus and select an invalid numeric value after its warning closes."""
+        widget = {
+            "Track": self.track_edit,
+            "Track Total": self.track_total_edit,
+            "Disc": self.disc_edit,
+            "Disc Total": self.disc_total_edit,
+        }[name]
+        widget.setFocus()
+        widget.selectAll()
+
+    def set_id3v1_comment_enabled(self, enabled):
+        """Apply the caller's ID3v1 Comment availability decision."""
+        self.id3v1_comment_edit.setEnabled(enabled)
+
     def set_highlighted_fields(self, fields):
         """Render supplied edit intent without owning or changing it."""
         for field, widget in self._editors.items():

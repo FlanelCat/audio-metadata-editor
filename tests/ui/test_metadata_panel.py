@@ -1,3 +1,5 @@
+import pytest
+
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QFormLayout, QLineEdit, QPlainTextEdit, QPushButton
 
@@ -230,3 +232,88 @@ def test_highlight_changes_and_reset(qtbot):
         for name, field in SIGNAL_FIELDS:
             assert getattr(panel, name).styleSheet() == (
                 'background-color: #fff3cd; color: black;' if field in highlighted else '')
+
+
+def test_numeric_text_and_focus_api(qtbot):
+    panel = MetadataPanel()
+    qtbot.addWidget(panel)
+    panel.show()
+    values = {'track_number': ' 007 ', 'track_total': '',
+              'disc_number': '-1', 'disc_total': 'invalid',
+              'series_number': '01.50 / part A'}
+    panel.set_field_values(values)
+    events = []
+    panel.values_changed.connect(lambda: events.append('changed'))
+    panel.field_edited.connect(events.append)
+    assert panel.numeric_field_texts() == {
+        'Track': ' 007 ', 'Track Total': '', 'Disc': '-1', 'Disc Total': 'invalid'}
+    for label, editor in [('Track', panel.track_edit), ('Track Total', panel.track_total_edit),
+                          ('Disc', panel.disc_edit), ('Disc Total', panel.disc_total_edit)]:
+        panel.focus_numeric_field(label)
+        assert panel.focusWidget() is editor
+        assert editor.selectedText() == editor.text()
+    assert panel.series_number_edit.text() == values['series_number']
+    assert not events
+
+
+def test_comment_enablement_api_is_silent(qtbot):
+    panel = MetadataPanel()
+    qtbot.addWidget(panel)
+    panel.set_field_values({'id3v1_comment': 'Preserve'})
+    events = []
+    panel.values_changed.connect(lambda: events.append('changed'))
+    panel.field_edited.connect(events.append)
+    for enabled in (False, True, False):
+        panel.set_id3v1_comment_enabled(enabled)
+        assert panel.id3v1_comment_edit.isEnabled() == enabled
+        assert panel.collect_metadata().id3v1_comment == 'Preserve'
+        assert panel.comment_edit.isEnabled()
+    assert not events
+
+
+@pytest.mark.parametrize('field,label,editor_name', [
+    ('track_number', 'Track', 'track_edit'),
+    ('track_total', 'Track Total', 'track_total_edit'),
+    ('disc_number', 'Disc', 'disc_edit'),
+    ('disc_total', 'Disc Total', 'disc_total_edit'),
+])
+@pytest.mark.parametrize('text,error', [
+    ('', None), ('  ', None), ('0', None), (' 007 ', None),
+    ('-1', 'cannot be negative.'), ('1.5', 'must be a whole number.'),
+    ('invalid', 'must be a whole number.'),
+])
+def test_window_numeric_validation(qtbot, monkeypatch, field, label, editor_name, text, error):
+    from PySide6.QtWidgets import QMessageBox
+    window = MainWindow()
+    qtbot.addWidget(window)
+    window.show()
+    panel = window.metadata_panel
+    panel.set_field_values({'track_number': 2, 'track_total': 17,
+                            'disc_number': 1, 'disc_total': 5,
+                            'series_number': 'not a number', field: text})
+    warnings = []
+    monkeypatch.setattr(QMessageBox, 'warning', lambda *args: warnings.append(args[1:]))
+    assert window._validate_numeric_fields() == (error is None)
+    if error:
+        assert warnings == [('Invalid Number', f'{label} {error}')]
+        editor = getattr(panel, editor_name)
+        assert panel.focusWidget() is editor
+        assert editor.selectedText() == text
+    else:
+        assert not warnings
+    assert not window._has_unsaved_changes()
+
+
+def test_window_format_enablement(qtbot):
+    from pathlib import Path
+    from audio_metadata_editor.metadata.model import Metadata
+    window = MainWindow()
+    qtbot.addWidget(window)
+    for suffix, enabled in [('.mp3', True), ('.m4b', False), ('.MP3', True)]:
+        window.current_file = Path('sample' + suffix)
+        window._show_metadata(Metadata())
+        assert window.metadata_panel.id3v1_comment_edit.isEnabled() == enabled
+        assert not window._has_unsaved_changes()
+    window._clear_editing_context()
+    assert not window.metadata_panel.id3v1_comment_edit.isEnabled()
+    assert not window._has_unsaved_changes()
