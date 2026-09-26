@@ -27,8 +27,8 @@ def snapshot(path, group):
 
 
 @pytest.fixture(params=['mp3', 'm4b'])
-def window(request, tmp_path, qtbot, monkeypatch):
-    master = Path(__file__).parents[1] / 'fixtures' / f'silence.{request.param}'
+def window(request, tmp_path, qtbot, monkeypatch, audio_fixture_dir):
+    master = audio_fixture_dir / f'silence.{request.param}'
     for name in ('a', 'b'):
         path = tmp_path / f'{name}.{request.param}'
         shutil.copy2(master, path)

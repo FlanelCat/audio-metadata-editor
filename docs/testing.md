@@ -28,7 +28,12 @@ Tests should be organized as:
 
 ```text
 tests/
+├── conftest.py
 ├── fixtures/
+│   ├── README.md
+│   └── audio/
+│       ├── silence.mp3
+│       └── silence.m4b
 ├── unit/
 ├── integration/
 └── ui/
@@ -76,7 +81,7 @@ Examples:
 
 ### `tests/fixtures/`
 
-Contains small audio files created specifically for automated testing.
+Contains fixture documentation and immutable generated audio samples in `tests/fixtures/audio/`. The shared `audio_fixture_dir` pytest fixture in `tests/conftest.py` centralizes their location. Tests select named samples (`silence.mp3` or `silence.m4b`) and copy them into `tmp_path` before use; generated images and modified audio stay in temporary directories. Unreferenced local media is not part of the automated fixture set and should not be added to version control without establishing its provenance and purpose.
 
 Fixtures must not contain personal audiobook content.
 

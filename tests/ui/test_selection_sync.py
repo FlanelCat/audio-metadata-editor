@@ -10,9 +10,9 @@ from audio_metadata_editor.ui.main_window import MainWindow
 
 
 @pytest.fixture(params=['mp3', 'm4b'])
-def window(request, tmp_path, qtbot, monkeypatch):
+def window(request, tmp_path, qtbot, monkeypatch, audio_fixture_dir):
     for name in 'abc':
-        shutil.copy2(Path(__file__).parents[1] / 'fixtures' / f'silence.{request.param}',
+        shutil.copy2(audio_fixture_dir / f'silence.{request.param}',
                      tmp_path / f'{name}.{request.param}')
     win = MainWindow()
     qtbot.addWidget(win, before_close_func=lambda w: setattr(w, 'current_metadata', None))

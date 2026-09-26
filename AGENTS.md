@@ -167,6 +167,15 @@ Never modify fixture masters in place.
 
 Never test against files in the user's audiobook library.
 
+## Local Development Media
+
+* `dev-fixtures/` contains local/private media for manual development and testing only. Everything inside must remain untracked; never `git add`, commit, or push these files.
+* Never remove the `dev-fixtures/` ignore rule from `.gitignore`.
+* Automated tests must never depend on `dev-fixtures/`. Never reference specific files from it in reproducible test infrastructure or treat its filenames or contents as repository dependencies.
+* Do not copy media from `dev-fixtures/` into tracked fixtures unless the user explicitly requests it and that file's provenance/licensing has first been established.
+* Automated, version-controlled audio fixtures belong under `tests/fixtures/audio/`; the current source samples are `silence.mp3` and `silence.m4b`.
+* Tests that modify automated fixture media must use temporary copies, never modify tracked master fixtures.
+
 ## Running Tests
 
 Run the smallest relevant test set while developing.

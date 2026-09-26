@@ -10,8 +10,8 @@ from audio_metadata_editor.ui.main_window import MainWindow
 
 
 @pytest.fixture(params=['mp3', 'm4b'])
-def window(request, tmp_path, qtbot, monkeypatch):
-    master = Path(__file__).parents[1] / 'fixtures' / f'silence.{request.param}'
+def window(request, tmp_path, qtbot, monkeypatch, audio_fixture_dir):
+    master = audio_fixture_dir / f'silence.{request.param}'
     for name in ('a', 'b'):
         shutil.copy2(master, tmp_path / f'{name}.{request.param}')
     window = MainWindow()

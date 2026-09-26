@@ -1,4 +1,3 @@
-from pathlib import Path
 import shutil
 
 import pytest
@@ -56,13 +55,13 @@ def test_grow_and_shrink_all_rows(table, qtbot, column):
     assert_fitted(table, qtbot)
 
 
-def test_load_update_and_replace_directory(table, qtbot, tmp_path):
+def test_load_update_and_replace_directory(table, qtbot, tmp_path, audio_fixture_dir):
     first = tmp_path / 'first'
     second = tmp_path / 'second'
     first.mkdir()
     second.mkdir()
     path = first / ('Long filename ' * 6 + '.mp3')
-    shutil.copy2(Path(__file__).parents[1] / 'fixtures' / 'silence.mp3', path)
+    shutil.copy2(audio_fixture_dir / 'silence.mp3', path)
     before = path.read_bytes()
     table.load_directory(first)
     assert_fitted(table, qtbot)

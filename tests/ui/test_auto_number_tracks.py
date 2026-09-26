@@ -13,10 +13,10 @@ import audio_metadata_editor.ui.main_window as module
 
 
 @pytest.fixture(params=['mp3', 'm4b'])
-def window(request, tmp_path, qtbot, monkeypatch):
+def window(request, tmp_path, qtbot, monkeypatch, audio_fixture_dir):
     for name in ('a', 'b', 'c', 'd'):
         path = tmp_path / f'{name}.{request.param}'
-        shutil.copy2(Path(__file__).parents[1] / 'fixtures' / f'silence.{request.param}', path)
+        shutil.copy2(audio_fixture_dir / f'silence.{request.param}', path)
         if request.param == 'mp3':
             tags = ID3(path)
             tags.add(TIT2(encoding=3, text=[name]))

@@ -24,3 +24,7 @@ tests/*
 !tests/ui/
 !tests/fixtures/
 !tests/integration/
+!tests/conftest.py
+
+# Local/manual development fixtures — never commit
+dev-fixtures/

@@ -1,4 +1,3 @@
-from pathlib import Path
 import shutil
 
 import pytest
@@ -10,9 +9,9 @@ from audio_metadata_editor.metadata import (
 
 
 @pytest.fixture(params=['mp3', 'm4b'])
-def audio(request, tmp_path):
+def audio(request, tmp_path, audio_fixture_dir):
     path = tmp_path / f'audio.{request.param}'
-    shutil.copy2(Path(__file__).parents[1] / 'fixtures' / f'silence.{request.param}', path)
+    shutil.copy2(audio_fixture_dir / f'silence.{request.param}', path)
     writer = write_mp3_metadata if request.param == 'mp3' else write_m4b_metadata
     writer(path, Metadata(track_number=3, track_total=12, disc_number=2, disc_total=5))
     return path, writer
@@ -51,9 +50,9 @@ def test_full_write_pair_behavior(audio):
 
 @pytest.mark.parametrize('field,description', [('comment', ''), ('id3v1_comment', 'ID3v1 Comment')])
 @pytest.mark.parametrize('value', ['Changed', ''])
-def test_comment_category_isolation(tmp_path, field, description, value):
+def test_comment_category_isolation(tmp_path, field, description, value, audio_fixture_dir):
     path = tmp_path / 'audio.mp3'
-    shutil.copy2(Path(__file__).parents[1] / 'fixtures' / 'silence.mp3', path)
+    shutil.copy2(audio_fixture_dir / 'silence.mp3', path)
     tags = ID3(path)
     for desc in ('', 'ID3v1 Comment', 'Unrelated'):
         for lang in ('eng', 'swe'):
@@ -74,9 +73,9 @@ def test_comment_category_isolation(tmp_path, field, description, value):
     assert [f.text for f in changed] == ([[value]] if value else [])
 
 
-def test_full_write_comments(tmp_path):
+def test_full_write_comments(tmp_path, audio_fixture_dir):
     path = tmp_path / 'audio.mp3'
-    shutil.copy2(Path(__file__).parents[1] / 'fixtures' / 'silence.mp3', path)
+    shutil.copy2(audio_fixture_dir / 'silence.mp3', path)
     tags = ID3(path)
     for desc in ('', 'ID3v1 Comment', 'Unrelated'):
         tags.add(COMM(encoding=3, lang='swe', desc=desc, text=['Original']))
