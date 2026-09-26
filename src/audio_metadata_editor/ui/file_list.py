@@ -294,9 +294,6 @@ class FileList(QTableWidget):
             if path:
                 paths.append(path)
 
-        if not paths:
-            return
-
         self.files_selected.emit(paths)
 
         if len(paths) == 1:

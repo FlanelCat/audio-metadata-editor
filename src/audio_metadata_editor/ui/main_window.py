@@ -47,6 +47,7 @@ class MainWindow(QMainWindow):
         self.resize(1200, 700)
 
         self.root_path = None
+        self._loaded_directory_item = None
         self.current_file = None
         self.selected_files = []
         self._context_index = QPersistentModelIndex()
@@ -172,8 +173,26 @@ class MainWindow(QMainWindow):
             self.pending_artwork = None
             self.pending_artwork_mime = ""
             self._show_common_metadata([read_metadata(Path(path)) for path in paths])
+        else:
+            self._clear_editing_context()
         self._context_index = QPersistentModelIndex(self.file_list.currentIndex())
         return True
+
+    def _clear_editing_context(self):
+        self.current_file = None
+        self.selected_files = []
+        self.current_metadata = None
+        self._context_index = QPersistentModelIndex()
+        self.multi_edit_fields.clear()
+        self.multi_edit_artwork = False
+        self.artwork_edited = False
+        self.pending_artwork = None
+        self.pending_artwork_mime = ""
+        self.metadata_panel.clear_metadata()
+        self._show_artwork_preview(None)
+        self.id3v1_comment_edit.setEnabled(False)
+        self._update_multi_edit_visuals()
+        self.statusBar().clearMessage()
 
     def _guard_selection_change(self):
         if not self._has_unsaved_changes():
@@ -225,6 +244,9 @@ class MainWindow(QMainWindow):
         if not directory:
             return
 
+        if not self._guard_selection_change():
+            return
+
         self.root_path = Path(directory)
 
         self._populate_root()
@@ -232,6 +254,9 @@ class MainWindow(QMainWindow):
         self.status_label.setText(str(self.root_path))
 
     def _populate_root(self):
+        if not self._guard_selection_change():
+            return
+        self._loaded_directory_item = None
         self.directory_tree.clear()
 
         root_item = QTreeWidgetItem(
@@ -309,11 +334,20 @@ class MainWindow(QMainWindow):
         if not path:
             return
 
+        if not self._guard_selection_change():
+            if self._loaded_directory_item is not None:
+                with QSignalBlocker(self.directory_tree):
+                    self.directory_tree.setCurrentItem(self._loaded_directory_item)
+            return
+
         directory = Path(path)
-
+        # Guard before destroying rows; intermediate selection signals cannot
+        # restore rows once the model is being cleared.
+        with QSignalBlocker(self.file_list):
+            self.file_list.load_directory(directory)
+        self._clear_editing_context()
+        self._loaded_directory_item = item
         self.status_label.setText(str(directory))
-
-        self.file_list.load_directory(directory)
 
     def _refresh_tree(self):
         if self.root_path is not None:
