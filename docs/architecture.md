@@ -81,6 +81,7 @@ src/audio_metadata_editor/
 │   └── m4b.py
 └── ui/
     ├── __init__.py
+    ├── directory_tree.py
     ├── file_list.py
     ├── metadata_panel.py
     └── main_window.py
@@ -209,6 +210,8 @@ Refactoring should be incremental and driven by concrete requirements or testing
 `ui/dialogs/paste_fields_dialog.py` owns only the supplied field checkboxes and selection controls. `MainWindow` retains remembered choices, clipboard data, pending metadata/artwork application, previews, and saving. Rejection is distinct from accepting an empty selection.
 
 `ui/metadata_panel.py` constructs the editing controls and provides `set_metadata`, `collect_metadata`, `clear_metadata`, and partial `set_field_values` presentation methods. These methods cover editor values only: population suppresses widget signals, numeric collection preserves the existing blank/invalid-to-None conversion, and series numbers remain strings. MainWindow supplies common/mixed decisions and attaches pending artwork to collected metadata. MetadataPanel also forwards editor signals and renders supplied field highlights; MainWindow owns edit intent, dirty-state decisions, and status counts. MetadataPanel exposes raw numeric text and owns invalid-field focus/selection and ID3v1 Comment editor enablement. MainWindow retains numeric validation rules and warnings, decides field availability, and owns artwork rendering/intent, editing state, saved baselines, coordination, and persistence. Control attributes remain available for those responsibilities and existing integration tests. This is an incremental presentation extraction, not editing-state ownership. Save Changes remains in the toolbar.
+
+`ui/directory_tree.py` owns the folder tree, lazy expansion, placeholders, directory filtering/sorting, and current-item presentation. Clicks emit `directory_requested(path)`; `set_root`, `set_current_directory`, and `restore_current_directory` synchronize presentation without requesting navigation. MainWindow retains the root navigation choice, Save / Discard / Cancel guard, FileList loading, editing-context cleanup and status updates. Rejected navigation restores the last accepted tree item. Refresh remains a guarded rebuild followed by loading the root directory, with no file selection restored; the guard runs before the tree is rebuilt.
 
 ## 10. File List
 

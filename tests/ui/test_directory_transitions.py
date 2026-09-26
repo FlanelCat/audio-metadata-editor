@@ -32,7 +32,7 @@ def change(win, directory):
     item.setData(0, 256, str(directory))
     win.directory_tree.addTopLevelItem(item)
     win.directory_tree.setCurrentItem(item)
-    win._directory_selected(item, 0)
+    win.directory_tree.itemClicked.emit(item, 0)
 
 
 def assert_empty(win):
@@ -240,3 +240,20 @@ def test_file_list_reload_signals(setup, qtbot, tmp_path):
     table.load_directory(empty)
     assert observed == []  # Already empty selection: no notification.
     assert table.rowCount() == 0
+
+
+def test_tree_synchronization_preserves_pending_context(setup, monkeypatch):
+    win, a, b = setup
+    original = list(win.selected_files)
+    win.artist_edit.setText('Pending')
+    prompts = []
+    monkeypatch.setattr(QMessageBox, 'question',
+                        lambda *args: prompts.append(args) or QMessageBox.Discard)
+    win.directory_tree.set_current_directory(a)
+    win.directory_tree.restore_current_directory()
+    assert not prompts
+    assert win.selected_files == original
+    assert win.file_list.selected_paths_in_row_order() == original
+    assert win.artist_edit.text() == 'Pending'
+    assert win._has_unsaved_changes()
+    assert win.file_list.item(0, 0).text().startswith('*')

@@ -24,13 +24,12 @@ from PySide6.QtWidgets import (
     QPushButton,
     QSplitter,
     QToolBar,
-    QTreeWidget,
-    QTreeWidgetItem,
 )
 
 from ..metadata.writer import write_metadata
 from .dialogs.auto_number_dialog import AutoNumberDialog
 from .dialogs.paste_fields_dialog import PasteFieldsDialog
+from .directory_tree import DirectoryTree
 from .file_list import FileList
 from .metadata_panel import MetadataPanel
 from ..metadata import (
@@ -47,7 +46,6 @@ class MainWindow(QMainWindow):
         self.resize(1200, 700)
 
         self.root_path = None
-        self._loaded_directory_item = None
         self.current_file = None
         self.selected_files = []
         self._context_index = QPersistentModelIndex()
@@ -103,10 +101,8 @@ class MainWindow(QMainWindow):
         splitter = QSplitter()
 
         # Directory tree
-        self.directory_tree = QTreeWidget()
-        self.directory_tree.setHeaderLabel("Folders")
-        self.directory_tree.itemExpanded.connect(self._populate_directory)
-        self.directory_tree.itemClicked.connect(self._directory_selected)
+        self.directory_tree = DirectoryTree()
+        self.directory_tree.directory_requested.connect(self._directory_selected)
 
         splitter.addWidget(self.directory_tree)
 
@@ -256,88 +252,15 @@ class MainWindow(QMainWindow):
     def _populate_root(self):
         if not self._guard_selection_change():
             return
-        self._loaded_directory_item = None
-        self.directory_tree.clear()
+        self.directory_tree.set_root(self.root_path)
+        self._directory_selected(self.root_path)
 
-        root_item = QTreeWidgetItem(
-            [self.root_path.name or str(self.root_path)]
-        )
-
-        root_item.setData(0, 256, str(self.root_path))
-
-        self.directory_tree.addTopLevelItem(root_item)
-
-        self._add_placeholder(root_item)
-
-        root_item.setExpanded(True)
-
-        self.directory_tree.setCurrentItem(root_item)
-        root_item.setSelected(True)
-
-        self._directory_selected(root_item, 0)
-
-    def _populate_directory(self, item):
-        path = Path(item.data(0, 256))
-
-        if not path.is_dir():
-            return
-
-        # Remove the placeholder item.
-        while item.childCount():
-            child = item.takeChild(0)
-
-            if child.data(0, 256) is not None:
-                item.addChild(child)
-                break
-
-        # Don't repopulate an already populated directory.
-        if item.childCount() > 0:
-            return
-
-        try:
-            directories = sorted(
-                (
-                    entry
-                    for entry in path.iterdir()
-                    if entry.is_dir() and not entry.name.startswith(".")
-                ),
-                key=lambda entry: entry.name.lower(),
-            )
-        except OSError:
-            return
-
-        for directory in directories:
-            child = QTreeWidgetItem([directory.name])
-            child.setData(0, 256, str(directory))
-
-            if self._contains_directory(directory):
-                self._add_placeholder(child)
-
-            item.addChild(child)
-
-    def _add_placeholder(self, item):
-        placeholder = QTreeWidgetItem([""])
-        item.addChild(placeholder)
-
-    def _contains_directory(self, path):
-        try:
-            return any(
-                entry.is_dir() and not entry.name.startswith(".")
-                for entry in path.iterdir()
-            )
-        except OSError:
-            return False
-
-    def _directory_selected(self, item, column):
-        path = item.data(0, 256)
-
+    def _directory_selected(self, path):
         if not path:
             return
 
         if not self._guard_selection_change():
-            if self._loaded_directory_item is not None:
-                with QSignalBlocker(self.directory_tree):
-                    self.directory_tree.setCurrentItem(self._loaded_directory_item)
+            self.directory_tree.restore_current_directory()
             return
 
         directory = Path(path)
@@ -346,7 +269,7 @@ class MainWindow(QMainWindow):
         with QSignalBlocker(self.file_list):
             self.file_list.load_directory(directory)
         self._clear_editing_context()
-        self._loaded_directory_item = item
+        self.directory_tree.set_current_directory(directory)
         self.status_label.setText(str(directory))
 
     def _refresh_tree(self):
