@@ -215,6 +215,13 @@ The application should avoid silently:
 
 Failure to read one file should not unnecessarily prevent other files from being loaded.
 
+A successfully read file with no supported tags returns valid empty metadata. An operational opening/parsing failure is an explicit metadata read error, never an empty saved baseline. Directory scans skip unreadable files and report them while loading readable files. Failed selection reads restore the accepted selection (or leave no selection initially) without replacing its baseline, pending values or artwork. Required reads for Undo/Discard, Paste, Copy and artwork inspection must complete before those operations replace state; failed discard reloads prevent navigation. Optional artwork dirty-indicator reads keep existing markers and report through status rather than opening a dialog.
+
+A write followed by failed readback is not reported as a completed save. The error identifies the file and explains that the write may have succeeded; no automatic rollback occurs. Panel values and pending intent remain available. Multi-file saving stops on a required read failure; earlier writes remain on disk and selection-wide intent is retained for retry. A failure during final common-display readback must not clear intent or announce success.
+
+Immediate field-save/Auto-number readback failures keep the prior baseline and track which fields still require verification. These unresolved files remain marked and protected by the existing transition guard; the mark means verification is pending, not that the disk write was rolled back. Enter does not advance and Auto-number stops. Save Changes retries verification without repeating the immediate write and preserves subsequent panel edits; successful explicit reload/Undo also resolves verification state. Auto-number failure counts distinguish saved-and-verified files from the potentially written file whose readback failed.
+
+
 Failure to write metadata must be reported clearly to the user.
 
 The application must not report a successful save unless the write operation actually succeeded.

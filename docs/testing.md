@@ -266,3 +266,9 @@ Desktop verification should include Ctrl/Shift multi-selection with different an
 ## Direct multi-selection regressions
 
 `tests/ui/test_initial_multi_selection.py` starts from an empty editing context and selects multiple temporary MP3/M4B fixture copies without first selecting a single file. Coverage includes close Save/Discard/Cancel and failed Save, actual window visibility, pending artwork removal (all/none/mixed artwork, repeated Remove, Undo/Discard/Save), selection/directory transitions, and MP3-only ID3v1 Comment availability and persistence. Availability tests also cover prior MP3/M4B single selections and mixed-format targets. The initial pre-fix run recorded 31 failures and 17 passes: nine close failures, 18 artwork-removal failures and four availability failures. Four further cases cover actual window close and MP3 comment persistence.
+
+## Metadata read-error regressions
+
+`tests/integration/test_read_errors.py` distinguishes valid untagged MP3/M4B media from missing, corrupt, inaccessible and parsing-failure inputs. Media operations use temporary fixture copies. `tests/ui/test_ui_read_errors.py` injects deterministic reader failures to cover initial and existing selection, pending panel/clipboard/artwork preservation, directory skip/reporting, failed Undo/Discard, optional indicator status, single/multi-panel post-write readback, partial progress and final common-display readback, actual Enter non-advance, Auto-number stop, and verification-only retry preserving later panel edits.
+
+Before production changes, the initial 18 cases produced 16 failures and two passes (valid untagged files). The completed read-error coverage contains 48 cases. Tests distinguish a failed write from a successful disk write followed by failed verification; earlier writes are explicitly checked to remain on disk. Existing preservation, selection, directory, Paste, panel and Auto-number suites remain required regression coverage.

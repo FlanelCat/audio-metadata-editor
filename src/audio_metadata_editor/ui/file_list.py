@@ -18,6 +18,7 @@ from PySide6.QtWidgets import (
     QTableWidgetItem,
 )
 from ..metadata.reader import read_metadata
+from ..metadata.errors import MetadataReadError
 
 AUDIO_EXTENSIONS = {".mp3", ".m4b"}
 
@@ -202,7 +203,14 @@ class FileList(QTableWidget):
         except OSError:
             return
 
-        for row, file_path in enumerate(files):
+        errors = []
+        for file_path in files:
+            try:
+                metadata = read_metadata(file_path)
+            except MetadataReadError as exc:
+                errors.append(exc)
+                continue
+            row = self.rowCount()
             self.insertRow(row)
 
             self.setItem(
@@ -210,8 +218,6 @@ class FileList(QTableWidget):
                 0,
                 SortableTableWidgetItem(file_path.name),
             )
-
-            metadata = read_metadata(file_path)
 
             track = ""
             if metadata.track_number is not None:
@@ -272,6 +278,8 @@ class FileList(QTableWidget):
                         item.flags()
                         | Qt.ItemFlag.ItemIsEditable
                     )
+
+        return errors
 
     def selected_paths_in_row_order(self):
         rows = sorted(index.row() for index in self.selectionModel().selectedRows())

@@ -469,7 +469,9 @@ The UI remains responsible for presenting validation errors and returning focus 
 
 ## 17. Error Handling
 
-Format-specific read/write failures originate in the metadata layer.
+Format-specific read/write failures originate in the metadata layer. Readers raise `MetadataReadError` with the affected path and chained underlying cause; valid empty metadata remains a `Metadata` value. MP3 distinguishes a missing ID3 header from invalid audio by checking the MPEG container before accepting an untagged file. M4B accepts absent tags only after successfully opening the container. Writers are unchanged.
+
+FileList returns skipped-file read errors to MainWindow for directory-scan reporting. MainWindow stages required reads before replacing presentation/state and reports post-write verification failures separately from successful completion. Its transient `_unverified_fields` map records immediate-save fields awaiting readback, without becoming a metadata cache or changing either explicit-save workflow.
 
 The UI is responsible for presenting useful errors to the user.
 

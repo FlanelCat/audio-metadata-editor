@@ -34,6 +34,7 @@ from .file_list import FileList
 from .metadata_panel import MetadataPanel
 from ..metadata import (
     read_metadata,
+    MetadataReadError,
     write_mp3_metadata,
     write_m4b_metadata,
 )
@@ -51,6 +52,8 @@ class MainWindow(QMainWindow):
         self._context_index = QPersistentModelIndex()
         self.multi_edit_fields = set()
         self.current_metadata = None
+        # Immediate writes awaiting a successful readback, not new panel edits.
+        self._unverified_fields = {}
         self.pending_artwork = None
         self.pending_artwork_mime = ""
         # Replacement/removal intent cannot be inferred from the first cover alone.
@@ -158,23 +161,37 @@ class MainWindow(QMainWindow):
     def _files_selected(self, paths):
         if set(paths) == set(self.selected_files):
             return True
+        try:
+            metadatas = [read_metadata(Path(path)) for path in paths]
+        except MetadataReadError as exc:
+            QMessageBox.critical(self, "Read Failed", str(exc))
+            self._restore_file_selection()
+            return False
         if not self._guard_selection_change():
             return False
+        # Saving the old context can change files shared with the requested context.
+        try:
+            metadatas = [read_metadata(Path(path)) for path in paths]
+        except MetadataReadError as exc:
+            QMessageBox.critical(self, "Read Failed", str(exc))
+            self._restore_file_selection()
+            return False
         if len(paths) == 1:
-            self._load_single_file(paths[0])
+            self._load_single_file(paths[0], metadatas[0])
         elif paths:
             self.selected_files = list(paths)
             self.multi_edit_artwork = False
             self.artwork_edited = False
             self.pending_artwork = None
             self.pending_artwork_mime = ""
-            self._show_common_metadata([read_metadata(Path(path)) for path in paths])
+            self._show_common_metadata(metadatas)
         else:
             self._clear_editing_context()
         self._context_index = QPersistentModelIndex(self.file_list.currentIndex())
         return True
 
     def _clear_editing_context(self):
+        self._unverified_fields.clear()
         self.current_file = None
         self.selected_files = []
         self.current_metadata = None
@@ -207,7 +224,12 @@ class MainWindow(QMainWindow):
                 return True
         elif reply == QMessageBox.StandardButton.Discard:
             self._undo_changes()
-            return True
+            if not self._has_unsaved_changes():
+                return True
+        self._restore_file_selection()
+        return False
+
+    def _restore_file_selection(self):
         with QSignalBlocker(self.file_list):
             self.file_list.select_files(self.selected_files)
             if self._context_index.isValid():
@@ -215,7 +237,6 @@ class MainWindow(QMainWindow):
                     self._context_index.row(), self._context_index.column(),
                     QItemSelectionModel.SelectionFlag.NoUpdate,
                 )
-        return False
 
     def _advance_table_row(self, path):
         self.file_list.advance_allowed = self._files_selected([path])
@@ -267,10 +288,14 @@ class MainWindow(QMainWindow):
         # Guard before destroying rows; intermediate selection signals cannot
         # restore rows once the model is being cleared.
         with QSignalBlocker(self.file_list):
-            self.file_list.load_directory(directory)
+            errors = self.file_list.load_directory(directory)
         self._clear_editing_context()
         self.directory_tree.set_current_directory(directory)
         self.status_label.setText(str(directory))
+        if errors:
+            QMessageBox.critical(
+                self, "Read Failed", "Skipped unreadable files:\n\n" + "\n".join(map(str, errors))
+            )
 
     def _refresh_tree(self):
         if self.root_path is not None:
@@ -285,18 +310,24 @@ class MainWindow(QMainWindow):
         )
 
     def _file_selected(self, path):
-        # Retain the direct single-file entry point used by explicit reloads.
-        if set(self.selected_files) != {path} and not self._guard_selection_change():
-            return
-        self._load_single_file(path)
+        # Explicit reloads must also finish reading before replacing panel state.
+        if set(self.selected_files) != {path}:
+            return self._files_selected([path])
+        try:
+            metadata = read_metadata(Path(path))
+        except MetadataReadError as exc:
+            QMessageBox.critical(self, "Read Failed", str(exc))
+            return False
+        self._load_single_file(path, metadata)
+        return True
 
-    def _load_single_file(self, path):
+    def _load_single_file(self, path, metadata):
         new_file = Path(path)
+        self._unverified_fields.pop(new_file, None)
         self.selected_files = [path]
         self.current_file = new_file
         self._context_index = QPersistentModelIndex(self.file_list.currentIndex())
 
-        metadata = read_metadata(new_file)
         self.current_metadata = metadata
         self.pending_artwork = metadata.artwork
         self.pending_artwork_mime = metadata.artwork_mime
@@ -315,6 +346,12 @@ class MainWindow(QMainWindow):
         return metadata
 
     def _save_changes(self):
+        # Retry verification without rewriting a field that may already be saved.
+        try:
+            self._verify_field_saves()
+        except MetadataReadError as exc:
+            QMessageBox.critical(self, "Readback Failed", str(exc))
+            return
         if not self._validate_numeric_fields():
             return
 
@@ -380,7 +417,7 @@ class MainWindow(QMainWindow):
                             **artwork_options,
                         )
 
-                    metadata = read_metadata(path)
+                    metadata = self._read_after_write(path)
                     if self.current_file == path:
                         self.current_metadata = metadata
                     self.file_list.update_file_metadata(
@@ -392,8 +429,15 @@ class MainWindow(QMainWindow):
                 QMessageBox.critical(
                     self,
                     "Save Failed",
-                    f"Could not save the selected files:\n\n{exc}",
+                    f"Could not complete saving the selected files:\n\n{exc}\n\n"
+                    "Earlier writes remain saved; no rollback was attempted.",
                 )
+                return
+
+            try:
+                metadatas = [self._read_after_write(Path(path)) for path in self.selected_files]
+            except MetadataReadError as exc:
+                QMessageBox.critical(self, "Readback Failed", str(exc))
                 return
 
             self.multi_edit_fields.clear()
@@ -405,12 +449,6 @@ class MainWindow(QMainWindow):
                 "Saved",
                 f"Saved changes to {len(self.selected_files)} files.",
             )
-
-            # Refresh the multi-file display.
-            metadatas = [
-                read_metadata(Path(path))
-                for path in self.selected_files
-            ]
 
             self._show_common_metadata(metadatas)
 
@@ -474,7 +512,7 @@ class MainWindow(QMainWindow):
                     f"Unsupported file type: {self.current_file.suffix}"
                 )
 
-            metadata = read_metadata(self.current_file)
+            metadata = self._read_after_write(self.current_file)
 
         except Exception as exc:
             QMessageBox.critical(
@@ -504,6 +542,8 @@ class MainWindow(QMainWindow):
         )
 
     def _has_unsaved_changes(self):
+        if any(Path(path) in self._unverified_fields for path in self.selected_files):
+            return True
         if len(self.selected_files) > 1:
             return bool(
                 self.multi_edit_fields
@@ -546,12 +586,15 @@ class MainWindow(QMainWindow):
             self.statusBar().showMessage("No Changes")
             return
 
-        if len(self.selected_files) > 1:
-            metadatas = [
-                read_metadata(Path(path))
-                for path in self.selected_files
-            ]
+        try:
+            metadatas = [read_metadata(Path(path)) for path in self.selected_files]
+        except MetadataReadError as exc:
+            QMessageBox.critical(self, "Undo Failed", str(exc))
+            return
 
+        for path in self.selected_files:
+            self._unverified_fields.pop(Path(path), None)
+        if len(self.selected_files) > 1:
             self.multi_edit_fields.clear()
             self.multi_edit_artwork = False
             self.artwork_edited = False
@@ -575,7 +618,7 @@ class MainWindow(QMainWindow):
         if len(self.selected_files) == 1:
             path = Path(self.selected_files[0])
 
-            self.current_metadata = read_metadata(path)
+            self.current_metadata = metadatas[0]
 
             self.multi_edit_fields.clear()
             self.multi_edit_artwork = False
@@ -687,14 +730,18 @@ class MainWindow(QMainWindow):
         if len(self.selected_files) <= 1 and self.current_metadata is None:
             return
 
+        if len(self.selected_files) > 1:
+            try:
+                metadatas = [read_metadata(Path(path)) for path in self.selected_files]
+            except MetadataReadError as exc:
+                QMessageBox.critical(self, "Read Failed", str(exc))
+                return
+
         self.pending_artwork = None
         self.pending_artwork_mime = ""
 
         if len(self.selected_files) > 1:
-            self.multi_edit_artwork = any(
-                read_metadata(Path(path)).artwork is not None
-                for path in self.selected_files
-            )
+            self.multi_edit_artwork = any(metadata.artwork is not None for metadata in metadatas)
             self.artwork_edited = self.multi_edit_artwork
         else:
             self.artwork_edited = self.current_metadata.artwork is not None
@@ -846,9 +893,12 @@ class MainWindow(QMainWindow):
             )
             return
 
-        self.metadata_clipboard = read_metadata(
-            Path(self.selected_files[0])
-        )
+        try:
+            metadata = read_metadata(Path(self.selected_files[0]))
+        except MetadataReadError as exc:
+            QMessageBox.critical(self, "Copy Failed", str(exc))
+            return
+        self.metadata_clipboard = metadata
 
         self.statusBar().showMessage(
             f"Metadata copied from {Path(self.selected_files[0]).name}"
@@ -910,6 +960,12 @@ class MainWindow(QMainWindow):
             )
             return
 
+        try:
+            metadatas = [read_metadata(Path(path)) for path in self.selected_files]
+        except MetadataReadError as exc:
+            QMessageBox.critical(self, "Paste Failed", str(exc))
+            return
+
         if "artwork" in selected_fields:
             self.artwork_edited = True
             self.pending_artwork = self.metadata_clipboard.artwork
@@ -929,9 +985,8 @@ class MainWindow(QMainWindow):
 
         self._show_pasted_metadata(selected_fields)
 
-        for path_string in self.selected_files:
+        for path_string, metadata in zip(self.selected_files, metadatas):
             path = Path(path_string)
-            metadata = read_metadata(path)
 
             for field in selected_fields:
                 setattr(
@@ -1021,15 +1076,20 @@ class MainWindow(QMainWindow):
             if self.multi_edit_fields:
                 dirty_paths = self.selected_files.copy()
             elif self.multi_edit_artwork:
-                dirty_paths = [
-                    path for path in self.selected_files
-                    if self.pending_artwork is not None
-                    or read_metadata(Path(path)).artwork is not None
-                ]
+                try:
+                    dirty_paths = [
+                        path for path in self.selected_files
+                        if self.pending_artwork is not None
+                        or read_metadata(Path(path)).artwork is not None
+                    ]
+                except MetadataReadError as exc:
+                    self.statusBar().showMessage(str(exc))
+                    return
 
         elif self.current_file is not None and self._has_unsaved_changes():
             dirty_paths = [self.current_file]
 
+        dirty_paths.extend(self._unverified_fields)
         self.file_list.set_dirty_files(dirty_paths)
 
     def _save_table_cell(self, path_string, column, value):
@@ -1070,13 +1130,61 @@ class MainWindow(QMainWindow):
             except Exception:
                 pass
 
+    def _verify_field_saves(self):
+        """Finish failed immediate-save readbacks without issuing another write."""
+        verified = {path: self._read_after_write(path) for path in self._unverified_fields}
+        common_updates = {}
+        mixed_fields = set()
+        if verified and len(self.selected_files) > 1:
+            metadatas = [self._read_after_write(Path(path)) for path in self.selected_files]
+            for field in set().union(*self._unverified_fields.values()) - self.multi_edit_fields:
+                value, common = self._common_metadata_value(metadatas, field)
+                common_updates[field] = value
+                if not common:
+                    mixed_fields.add(field)
+        for path, metadata in verified.items():
+            fields = self._unverified_fields[path]
+            if self.current_file == path and self.current_metadata is not None:
+                edited = self._get_edited_metadata()
+                unchanged = {field for field in fields
+                             if getattr(edited, field) == getattr(self.current_metadata, field)}
+                for field in fields:
+                    setattr(self.current_metadata, field, getattr(metadata, field))
+                if len(self.selected_files) == 1:
+                    self.metadata_panel.set_field_values(
+                        {field: getattr(metadata, field) for field in unchanged}
+                    )
+            self.file_list.update_file_metadata(path, metadata)
+            del self._unverified_fields[path]
+        if verified:
+            self.metadata_panel.set_field_values(common_updates, mixed_fields=mixed_fields)
+            self._update_dirty_indicators()
+
+    def _read_after_write(self, path):
+        try:
+            return read_metadata(path)
+        except MetadataReadError as exc:
+            raise MetadataReadError(
+                path, f"Write may have succeeded, but readback failed. "
+                f"No rollback was attempted. {exc}"
+            ) from exc
+
     def _save_metadata_field(self, path, field, value):
         """Persist one field and synchronize only its panel baseline."""
         metadata = read_metadata(path)
         if getattr(metadata, field) != value:
             setattr(metadata, field, value)
             write_metadata(path, metadata, fields={field})
-        metadata = read_metadata(path)
+        try:
+            metadata = self._read_after_write(path)
+        except MetadataReadError:
+            self._unverified_fields.setdefault(path, set()).add(field)
+            self._update_dirty_indicators()
+            raise
+        unverified = self._unverified_fields.get(path, set())
+        unverified.discard(field)
+        if not unverified:
+            self._unverified_fields.pop(path, None)
         saved_value = getattr(metadata, field)
         if self.current_file == path and self.current_metadata is not None:
             setattr(self.current_metadata, field, saved_value)
@@ -1114,14 +1222,17 @@ class MainWindow(QMainWindow):
                     QMessageBox.critical(
                         self, "Auto-number Tracks Failed",
                         f"Could not number:\n{path}\n\n{exc}\n\n"
-                        f"{saved} file(s) saved. Remaining files were not processed.",
+                        f"{saved} file(s) saved and verified. Remaining files were not processed.",
                     )
                     return
             if len(self.selected_files) > 1:
-                self.multi_edit_fields.discard("track_number")
                 self._refresh_selected_tracks()
+                self.multi_edit_fields.discard("track_number")
                 self._update_multi_edit_visuals()
             self.statusBar().showMessage(f"Auto-numbered {saved} file(s).")
+        except MetadataReadError as exc:
+            QMessageBox.critical(self, "Auto-number Readback Failed",
+                                 f"{saved} file(s) saved. No rollback was attempted.\n\n{exc}")
         finally:
             self.file_list.setSortingEnabled(sorting)
 

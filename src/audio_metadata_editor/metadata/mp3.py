@@ -1,6 +1,8 @@
 from pathlib import Path
 
+from mutagen.mp3 import MP3
 from mutagen.id3 import (
+    ID3NoHeaderError,
     APIC,
     COMM,
     ID3,
@@ -20,6 +22,7 @@ from mutagen.id3 import (
 )
 
 from .model import Metadata
+from .errors import MetadataReadError
 
 _ARTWORK_UNCHANGED = object()
 
@@ -76,51 +79,57 @@ def _get_artwork(tags) -> tuple[bytes | None, str]:
 
 def read_mp3_metadata(path: Path) -> Metadata:
     try:
-        tags = ID3(path)
-    except Exception:
-        return Metadata()
+        try:
+            tags = ID3(path)
+        except ID3NoHeaderError:
+            # No ID3 header is valid only if the underlying MPEG audio is readable.
+            MP3(path)
+            return Metadata()
 
-    track_number, track_total = _get_pair(tags, "TRCK")
-    disc_number, disc_total = _get_pair(tags, "TPOS")
-    artwork, artwork_mime = _get_artwork(tags)
+        track_number, track_total = _get_pair(tags, "TRCK")
+        disc_number, disc_total = _get_pair(tags, "TPOS")
+        artwork, artwork_mime = _get_artwork(tags)
 
-    comment = ""
-    id3v1_comment = ""
+        comment = ""
+        id3v1_comment = ""
 
-    for frame in tags.getall("COMM"):
-        if not frame.text:
-            continue
+        for frame in tags.getall("COMM"):
+            if not frame.text:
+                continue
 
-        text = str(frame.text[0])
+            text = str(frame.text[0])
 
-        if frame.desc == "ID3v1 Comment":
-            id3v1_comment = text
-        elif not comment:
-            comment = text
+            if frame.desc == "ID3v1 Comment":
+                id3v1_comment = text
+            elif not comment:
+                comment = text
 
-    return Metadata(
-        title=_get_text(tags, "TIT2"),
-        artist=_get_text(tags, "TPE1"),
-        album=_get_text(tags, "TALB"),
-        album_artist=_get_text(tags, "TPE2"),
-        genre=_get_text(tags, "TCON"),
-        track_number=track_number,
-        track_total=track_total,
-        disc_number=disc_number,
-        disc_total=disc_total,
-        date=_get_text(tags, "TDRC"),
-        composer=_get_text(tags, "TCOM"),
-        comment=comment,
-        id3v1_comment=id3v1_comment,
-        description=_get_text(tags, "TIT3"),
-        publisher=_get_text(tags, "TPUB"),
-        copyright=_get_text(tags, "TCOP"),
-        narrator=_get_txxx(tags, "Narrator"),
-        series=_get_txxx(tags, "Series"),
-        series_number=_get_txxx(tags, "Series Number"),
-        artwork=artwork,
-        artwork_mime=artwork_mime,
-    )
+        return Metadata(
+            title=_get_text(tags, "TIT2"),
+            artist=_get_text(tags, "TPE1"),
+            album=_get_text(tags, "TALB"),
+            album_artist=_get_text(tags, "TPE2"),
+            genre=_get_text(tags, "TCON"),
+            track_number=track_number,
+            track_total=track_total,
+            disc_number=disc_number,
+            disc_total=disc_total,
+            date=_get_text(tags, "TDRC"),
+            composer=_get_text(tags, "TCOM"),
+            comment=comment,
+            id3v1_comment=id3v1_comment,
+            description=_get_text(tags, "TIT3"),
+            publisher=_get_text(tags, "TPUB"),
+            copyright=_get_text(tags, "TCOP"),
+            narrator=_get_txxx(tags, "Narrator"),
+            series=_get_txxx(tags, "Series"),
+            series_number=_get_txxx(tags, "Series Number"),
+            artwork=artwork,
+            artwork_mime=artwork_mime,
+        )
+    except Exception as exc:
+        raise MetadataReadError(path, exc) from exc
+
 
 def write_mp3_metadata(
     path: Path,

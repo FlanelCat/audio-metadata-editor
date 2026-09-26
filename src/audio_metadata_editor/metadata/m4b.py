@@ -4,6 +4,7 @@ from mutagen.mp4 import MP4, MP4Cover
 from mutagen.mp4 import AtomDataType
 
 from .model import Metadata
+from .errors import MetadataReadError
 
 
 def _get_text(tags, atom: str) -> str:
@@ -75,43 +76,44 @@ def _get_freeform(tags, name: str) -> str:
 def read_m4b_metadata(path: Path) -> Metadata:
     try:
         audio = MP4(path)
-    except Exception:
-        return Metadata()
 
-    tags = audio.tags
+        tags = audio.tags
 
-    if tags is None:
-        return Metadata()
+        if tags is None:
+            return Metadata()
 
-    track_number, track_total = _get_pair(tags, "trkn")
-    disc_number, disc_total = _get_pair(tags, "disk")
-    artwork, artwork_mime = _get_artwork(tags)
+        track_number, track_total = _get_pair(tags, "trkn")
+        disc_number, disc_total = _get_pair(tags, "disk")
+        artwork, artwork_mime = _get_artwork(tags)
 
-    return Metadata(
-        title=_get_text(tags, "\xa9nam"),
-        artist=_get_text(tags, "\xa9ART"),
-        album=_get_text(tags, "\xa9alb"),
-        album_artist=_get_text(tags, "aART"),
-        genre=_get_text(tags, "\xa9gen"),
+        return Metadata(
+            title=_get_text(tags, "\xa9nam"),
+            artist=_get_text(tags, "\xa9ART"),
+            album=_get_text(tags, "\xa9alb"),
+            album_artist=_get_text(tags, "aART"),
+            genre=_get_text(tags, "\xa9gen"),
 
-        track_number=track_number,
-        track_total=track_total,
+            track_number=track_number,
+            track_total=track_total,
 
-        disc_number=disc_number,
-        disc_total=disc_total,
+            disc_number=disc_number,
+            disc_total=disc_total,
 
-        date=_get_text(tags, "\xa9day"),
-        composer=_get_text(tags, "\xa9wrt"),
-        comment=_get_text(tags, "\xa9cmt"),
-        description=_get_text(tags, "desc"),
-        copyright=_get_text(tags, "cprt"),
-        narrator=_get_freeform(tags, "Narrator"),
-        series=_get_freeform(tags, "Series"),
-        series_number=_get_freeform(tags, "Series Number"),
-        publisher=_get_freeform(tags, "Publisher"),
-        artwork=artwork,
-        artwork_mime=artwork_mime,
-    )
+            date=_get_text(tags, "\xa9day"),
+            composer=_get_text(tags, "\xa9wrt"),
+            comment=_get_text(tags, "\xa9cmt"),
+            description=_get_text(tags, "desc"),
+            copyright=_get_text(tags, "cprt"),
+            narrator=_get_freeform(tags, "Narrator"),
+            series=_get_freeform(tags, "Series"),
+            series_number=_get_freeform(tags, "Series Number"),
+            publisher=_get_freeform(tags, "Publisher"),
+            artwork=artwork,
+            artwork_mime=artwork_mime,
+        )
+    except Exception as exc:
+        raise MetadataReadError(path, exc) from exc
+
 
 _ARTWORK_UNCHANGED = object()
 
