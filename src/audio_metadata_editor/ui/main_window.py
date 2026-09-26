@@ -39,6 +39,20 @@ from ..metadata import (
     write_m4b_metadata,
 )
 
+
+def _numeric_validation_error(text):
+    """Use the same raw-input rules for pending state and explicit validation."""
+    text = text.strip()
+    if text:
+        try:
+            value = int(text)
+        except ValueError:
+            return "must be a whole number."
+        if value < 0:
+            return "cannot be negative."
+    return None
+
+
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
@@ -51,6 +65,7 @@ class MainWindow(QMainWindow):
         self.selected_files = []
         self._context_index = QPersistentModelIndex()
         self.multi_edit_fields = set()
+        self._multi_field_baselines = {}
         self.current_metadata = None
         # Immediate writes awaiting a successful readback, not new panel edits.
         self._unverified_fields = {}
@@ -192,6 +207,7 @@ class MainWindow(QMainWindow):
 
     def _clear_editing_context(self):
         self._unverified_fields.clear()
+        self._multi_field_baselines.clear()
         self.current_file = None
         self.selected_files = []
         self.current_metadata = None
@@ -322,6 +338,7 @@ class MainWindow(QMainWindow):
         return True
 
     def _load_single_file(self, path, metadata):
+        self._multi_field_baselines.clear()
         new_file = Path(path)
         self._unverified_fields.pop(new_file, None)
         self.selected_files = [path]
@@ -402,6 +419,12 @@ class MainWindow(QMainWindow):
 
                     suffix = path.suffix.lower()
 
+                    # An attempted write can invalidate the old comparison
+                    # baseline even if the write or its readback later fails.
+                    baseline = self._multi_field_baselines[path]
+                    for field in self.multi_edit_fields:
+                        baseline.pop(field, None)
+
                     if suffix == ".mp3":
                         write_mp3_metadata(
                             path,
@@ -418,6 +441,8 @@ class MainWindow(QMainWindow):
                         )
 
                     metadata = self._read_after_write(path)
+                    for field in self.multi_edit_fields:
+                        baseline[field] = getattr(metadata, field)
                     if self.current_file == path:
                         self.current_metadata = metadata
                     self.file_list.update_file_metadata(
@@ -542,6 +567,8 @@ class MainWindow(QMainWindow):
         )
 
     def _has_unsaved_changes(self):
+        if self.selected_files and self._numeric_errors():
+            return True
         if any(Path(path) in self._unverified_fields for path in self.selected_files):
             return True
         if len(self.selected_files) > 1:
@@ -763,6 +790,13 @@ class MainWindow(QMainWindow):
         return None, False
 
     def _show_common_metadata(self, metadatas):
+        # Accepted scalar values only: no disk reads while the user edits.
+        # A missing field means an attempted save has not been verified.
+        self._multi_field_baselines = {
+            Path(path): {field: getattr(metadata, field)
+                         for field in self.metadata_panel.field_names}
+            for path, metadata in zip(self.selected_files, metadatas)
+        }
         self.metadata_panel.set_id3v1_comment_enabled(
             bool(self.selected_files)
             and all(Path(path).suffix.lower() == ".mp3" for path in self.selected_files)
@@ -796,7 +830,7 @@ class MainWindow(QMainWindow):
 
     def _connect_multi_edit_tracking(self):
         self.metadata_panel.field_edited.connect(self._metadata_field_edited)
-        self.metadata_panel.values_changed.connect(self._update_dirty_indicators)
+        self.metadata_panel.values_changed.connect(self._update_multi_edit_visuals)
 
     def _metadata_field_edited(self, field):
         if len(self.selected_files) > 1:
@@ -804,6 +838,14 @@ class MainWindow(QMainWindow):
             self._update_multi_edit_visuals()
 
     def _update_multi_edit_visuals(self):
+        if self.multi_edit_fields and self._multi_field_baselines:
+            edited = self._get_edited_metadata()
+            restored = {
+                field for field in self.multi_edit_fields - self._invalid_numeric_fields()
+                if all(field in baseline and getattr(edited, field) == baseline[field]
+                       for baseline in self._multi_field_baselines.values())
+            }
+            self.multi_edit_fields.difference_update(restored)
         self.metadata_panel.set_highlighted_fields(self.multi_edit_fields)
 
         if len(self.selected_files) > 1:
@@ -855,33 +897,23 @@ class MainWindow(QMainWindow):
 
         return field_names
 
+    def _numeric_errors(self):
+        return {
+            name: error
+            for name, text in self.metadata_panel.numeric_field_texts().items()
+            if (error := _numeric_validation_error(text)) is not None
+        }
+
+    def _invalid_numeric_fields(self):
+        numeric_fields = {"Track": "track_number", "Track Total": "track_total",
+                          "Disc": "disc_number", "Disc Total": "disc_total"}
+        return {numeric_fields[name] for name in self._numeric_errors()}
+
     def _validate_numeric_fields(self):
-        for name, text in self.metadata_panel.numeric_field_texts().items():
-            text = text.strip()
-
-            if not text:
-                continue
-
-            try:
-                value = int(text)
-            except ValueError:
-                QMessageBox.warning(
-                    self,
-                    "Invalid Number",
-                    f"{name} must be a whole number.",
-                )
-                self.metadata_panel.focus_numeric_field(name)
-                return False
-
-            if value < 0:
-                QMessageBox.warning(
-                    self,
-                    "Invalid Number",
-                    f"{name} cannot be negative.",
-                )
-                self.metadata_panel.focus_numeric_field(name)
-                return False
-
+        for name, error in self._numeric_errors().items():
+            QMessageBox.warning(self, "Invalid Number", f"{name} {error}")
+            self.metadata_panel.focus_numeric_field(name)
+            return False
         return True
 
     def _copy_metadata(self):
@@ -967,13 +999,16 @@ class MainWindow(QMainWindow):
             return
 
         if "artwork" in selected_fields:
-            self.artwork_edited = True
+            self.artwork_edited = (
+                self.metadata_clipboard.artwork is not None
+                or any(metadata.artwork is not None for metadata in metadatas)
+            )
             self.pending_artwork = self.metadata_clipboard.artwork
             self.pending_artwork_mime = (
-                self.metadata_clipboard.artwork_mime
+                self.metadata_clipboard.artwork_mime if self.pending_artwork is not None else ""
             )
             if len(self.selected_files) > 1:
-                self.multi_edit_artwork = True
+                self.multi_edit_artwork = self.artwork_edited
 
             # Preview pending artwork without saving or repopulating text edits.
             self._show_artwork_preview(self.pending_artwork)
@@ -1073,7 +1108,7 @@ class MainWindow(QMainWindow):
         dirty_paths = []
 
         if len(self.selected_files) > 1:
-            if self.multi_edit_fields:
+            if self.multi_edit_fields or self._numeric_errors():
                 dirty_paths = self.selected_files.copy()
             elif self.multi_edit_artwork:
                 try:
@@ -1144,10 +1179,15 @@ class MainWindow(QMainWindow):
                     mixed_fields.add(field)
         for path, metadata in verified.items():
             fields = self._unverified_fields[path]
+            if path in self._multi_field_baselines:
+                for field in fields:
+                    self._multi_field_baselines[path][field] = getattr(metadata, field)
             if self.current_file == path and self.current_metadata is not None:
                 edited = self._get_edited_metadata()
-                unchanged = {field for field in fields
-                             if getattr(edited, field) == getattr(self.current_metadata, field)}
+                unchanged = {
+                    field for field in fields - self._invalid_numeric_fields()
+                    if getattr(edited, field) == getattr(self.current_metadata, field)
+                }
                 for field in fields:
                     setattr(self.current_metadata, field, getattr(metadata, field))
                 if len(self.selected_files) == 1:
@@ -1186,6 +1226,8 @@ class MainWindow(QMainWindow):
         if not unverified:
             self._unverified_fields.pop(path, None)
         saved_value = getattr(metadata, field)
+        if path in self._multi_field_baselines:
+            self._multi_field_baselines[path][field] = saved_value
         if self.current_file == path and self.current_metadata is not None:
             setattr(self.current_metadata, field, saved_value)
             if len(self.selected_files) == 1:

@@ -58,6 +58,16 @@ class SortableTableWidgetItem(QTableWidgetItem):
 class EnterNavigationDelegate(QStyledItemDelegate):
     save_cell_requested = Signal(str, int, str)
 
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._enter_commit = False
+
+    def setModelData(self, editor, model, index):
+        # Qt also requests commits on focus loss and Tab. Those only abandon
+        # the transient editor; the accepted table value must remain intact.
+        if self._enter_commit:
+            super().setModelData(editor, model, index)
+
     def eventFilter(self, editor, event):
         if (
             event.type() == QEvent.Type.KeyPress
@@ -77,7 +87,11 @@ class EnterNavigationDelegate(QStyledItemDelegate):
                 return super().eventFilter(editor, event)
 
             # Commit the edit before requesting an immediate disk save.
-            self.commitData.emit(editor)
+            self._enter_commit = True
+            try:
+                self.commitData.emit(editor)
+            finally:
+                self._enter_commit = False
             self.closeEditor.emit(
                 editor,
                 QStyledItemDelegate.EndEditHint.NoHint,
@@ -184,6 +198,15 @@ class FileList(QTableWidget):
         delegate = EnterNavigationDelegate(self)
         delegate.save_cell_requested.connect(self.save_cell_requested)
         self.setItemDelegate(delegate)
+
+    def selectionChanged(self, selected, deselected):
+        # Programmatic selection changes need not move keyboard focus, so Qt
+        # may otherwise leave an editor visible over the previous context.
+        if self.state() == QTableWidget.State.EditingState:
+            editor = self.indexWidget(self.currentIndex())
+            if editor is not None:
+                self.closeEditor(editor, QStyledItemDelegate.EndEditHint.NoHint)
+        super().selectionChanged(selected, deselected)
 
     def load_directory(self, directory: Path):
         self.setRowCount(0)

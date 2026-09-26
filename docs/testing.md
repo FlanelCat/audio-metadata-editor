@@ -112,6 +112,10 @@ Important dirty-state cases include:
 * restoring the original value clears dirty state;
 * navigating through fields without changing them does not mark the file dirty.
 
+`tests/ui/test_effective_dirty.py` checks effective unresolved edits using temporary MP3/M4B copies: common multi-edit text, numeric and string-valued series-number restoration; mixed explicit values and blanks; independent field intent; and baseline synchronization after immediate saves and readback recovery. Invalid nonblank input in all four numeric fields remains pending with blank or populated baselines, retains validation messages/focus/selection, blocks failed Save, survives Cancel, and is removed by Discard or restoration. Selection, directory, Refresh and close guards are covered. Programmatic population remains clean. Absent-artwork Paste is a no-op on artwork-free targets, cancels pending additions, and removes covers only from targets with artwork.
+
+Before production changes, these regressions recorded 58 failures and 44 passes: six common-restoration failures, 48 numeric pending/guard failures (including multi-file numeric restoration), and four absent-artwork Paste failures. A subsequent recovery regression reproduced two more failures: verification of an earlier immediate save overwrote new invalid numeric text. Verification now preserves that unresolved input. Four additional cases guard the new comparison baseline after partial panel saves: restoring the former value must remain pending when an earlier write succeeded or its readback is unresolved. Existing table, panel-preservation, Paste/artwork, selection, directory, Auto-number and read-error suites remain regression coverage.
+
 ## 6. Metadata Integration Testing
 
 Metadata read/write operations should be tested against actual supported file formats.
@@ -258,6 +262,8 @@ The initial preservation regression run reproduced 24 failures and 8 passes: bot
 `tests/ui/test_selection_sync.py` uses temporary MP3/M4B fixture copies to cover guarded single/multi-selection transitions, Save/Discard/Cancel, failed prompt saves, clean transitions, repeated Enter-follow navigation, sorting, and unrelated pending panel edits during Enter-save. The initial regression run reproduced eight failures: six missing selection prompts and two stale-panel Enter advances. Existing table tests retain field-isolation/end-of-table assertions and now expect the panel to follow the active row after an accepted advance.
 
 Desktop verification should include Ctrl/Shift multi-selection with different anchors, collapsing onto the original file, all three prompt choices, repeated Enter editing in sorted tables, and cancelling an advance with unrelated panel edits pending.
+
+`tests/ui/test_abandoned_table_edit.py` covers transient center-table edits on temporary MP3/M4B copies. Before the fix, the four Track/Title click-away regressions failed; the expanded transition run recorded 40 failures and 20 passes. Coverage includes returning to the original file, multi-selection, clearing selection, directory change, Refresh, close/reopen, another cell/editor, Escape, Tab, programmatic selection and pending-panel Save/Discard/Cancel. Additional cases cover every editable metadata column, sorted tables, restoring selection after a read error, and abandoning edits without additional reads. Ordinary Qt focus-loss commits must not change the accepted model value; existing Enter-save and readback-failure tests continue to protect explicit saving and navigation.
 
 ## Directory and empty-selection transitions
 

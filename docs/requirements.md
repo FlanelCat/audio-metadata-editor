@@ -191,6 +191,12 @@ The application must track whether each loaded file contains unsaved changes.
 
 Dirty state must be based on actual metadata differences rather than merely on UI events.
 
+Pending state represents effective unresolved edits. Restoring a multi-file field to its original common value removes that field's pending intent without affecting other edits. For genuinely mixed values, explicitly entering a value (including blank) remains pending if any selected target differs; Save still applies that intended field across the selection. `series_number` remains a string.
+
+Nonblank invalid numeric input is pending even before successful validation, including when the saved number is blank. Save uses the existing validation messages and focuses/selects the invalid input without writing. Save / Discard / Cancel guards protect this input during selection changes, directory changes, Refresh and close; Discard reloads saved values when continuing to edit, and correction/restoration recalculates pending state.
+
+Pasting absent artwork creates no artwork intent when every target is already artwork-free, and cancels a pending addition on those targets. With mixed or all-present saved artwork it requests removal only where artwork exists. Explicit replacement, including identical cover bytes, retains its replacement semantics.
+
 A file becomes dirty when its current in-memory metadata differs from its loaded/saved state.
 
 If the user changes a value and subsequently restores the original value, the file should no longer be considered dirty.
@@ -278,5 +284,7 @@ Writing metadata is an explicit operation.
 Pending metadata-panel edits are protected by Save / Discard / Cancel when changing between single-file and multi-file editing contexts, including when the old file remains selected. Cancel restores the previous selection and current cell; a failed Save keeps the pending context. Discard restores saved table values before loading the requested context.
 
 After a successful center-table Enter-save, advancing to the next row selects that file and displays its disk-backed metadata in the panel. If this would replace unrelated pending panel edits, the existing Unsaved Changes prompt runs after the field save: Save or Discard permits the advance, while Cancel keeps the previous context and stops the advance. The completed field save remains saved. Failed field saves do not advance; the final row does not wrap.
+
+Center-table text remains transient until Enter requests the immediate save. Abandoning its editor through focus loss, another cell/selection, Tab, Escape, directory navigation, Refresh or close discards that text and retains accepted table presentation. Qt's automatic editor commits must not make it appear saved or turn it into pending metadata-panel edits. Existing guards still protect unrelated panel edits.
 
 Directory changes, Open Folder, and Refresh protect pending panel edits with the same Save / Discard / Cancel guard before replacing rows or rebuilding the tree. Failed Save and Cancel retain the old directory, selection and pending presentation. Refresh retains its existing behavior of rebuilding the tree and reloading the root directory without restoring file selection. Accepted reloads and clearing the table selection clear the file editing target, baseline, panel values, artwork, intent and dirty indicators; clipboard metadata remains available. A populated table with no selected row has no active metadata-panel target.
