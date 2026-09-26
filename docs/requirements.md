@@ -163,6 +163,12 @@ Fields that are not part of a multi-file edit must remain unchanged.
 
 Mixed values across selected files must not accidentally be replaced merely because the files were selected.
 
+Selecting multiple files directly from an empty editing context must work without a preceding single-file selection. Closing with pending multi-file edits prompts for Save / Discard / Cancel using the selected-file count, never a previous single-file name. Save uses the existing multi-file save workflow; failed Save and Cancel prevent close and preserve pending state. Discard closes without writing pending edits.
+
+Remove Artwork in a multi-selection derives removal intent from the selected files, without requiring a single-file baseline. It remains pending until explicitly saved; repeated removal is stable, files without artwork remain clean for artwork-only removal, and Undo/Discard restore the saved presentation through the existing workflows.
+
+ID3v1 Comment is enabled only for a nonempty selection containing exclusively MP3 files. It is disabled for M4B-only and mixed MP3/M4B selections, independent of prior selection. Multi-edit applies a chosen field to all selected targets, while the M4B writer does not support ID3v1 Comment; disabling mixed-format editing avoids offering an edit that cannot apply to every target. This controls the panel editor; Paste Metadata and writer semantics are unchanged.
+
 ## 13. Keyboard Editing
 
 Efficient keyboard-based metadata editing is a core requirement.

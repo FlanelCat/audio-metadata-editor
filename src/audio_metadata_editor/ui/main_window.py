@@ -600,11 +600,15 @@ class MainWindow(QMainWindow):
             event.accept()
             return
 
+        target = (
+            f"{len(self.selected_files)} files"
+            if len(self.selected_files) > 1 else self.current_file.name
+        )
         reply = QMessageBox.question(
             self,
             "Unsaved Changes",
             f"You have unsaved changes to:\n\n"
-            f"{self.current_file.name}\n\n"
+            f"{target}\n\n"
             "Do you want to save them before closing?",
             QMessageBox.StandardButton.Save
             | QMessageBox.StandardButton.Discard
@@ -680,7 +684,7 @@ class MainWindow(QMainWindow):
         self._update_dirty_indicators()
 
     def _remove_artwork(self):
-        if self.current_metadata is None:
+        if len(self.selected_files) <= 1 and self.current_metadata is None:
             return
 
         self.pending_artwork = None
@@ -712,6 +716,10 @@ class MainWindow(QMainWindow):
         return None, False
 
     def _show_common_metadata(self, metadatas):
+        self.metadata_panel.set_id3v1_comment_enabled(
+            bool(self.selected_files)
+            and all(Path(path).suffix.lower() == ".mp3" for path in self.selected_files)
+        )
         self.multi_edit_fields.clear()
         self._update_multi_edit_visuals()
 
