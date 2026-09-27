@@ -10,6 +10,7 @@ from PySide6.QtWidgets import (
 )
 
 from ..metadata.model import Metadata
+from .existing_values_edit import ExistingValuesEdit, MIXED_PLACEHOLDER
 
 
 class MetadataPanel(QWidget):
@@ -44,24 +45,24 @@ class MetadataPanel(QWidget):
 
         form = QFormLayout()
 
-        self.title_edit = QLineEdit()
-        self.artist_edit = QLineEdit()
-        self.album_edit = QLineEdit()
-        self.album_artist_edit = QLineEdit()
-        self.genre_edit = QLineEdit()
+        self.title_edit = ExistingValuesEdit()
+        self.artist_edit = ExistingValuesEdit()
+        self.album_edit = ExistingValuesEdit()
+        self.album_artist_edit = ExistingValuesEdit()
+        self.genre_edit = ExistingValuesEdit()
         self.track_edit = QLineEdit()
         self.track_total_edit = QLineEdit()
         self.disc_edit = QLineEdit()
         self.disc_total_edit = QLineEdit()
-        self.narrator_edit = QLineEdit()
-        self.series_edit = QLineEdit()
-        self.series_number_edit = QLineEdit()
-        self.publisher_edit = QLineEdit()
-        self.date_edit = QLineEdit()
-        self.composer_edit = QLineEdit()
-        self.comment_edit = QLineEdit()
-        self.id3v1_comment_edit = QLineEdit()
-        self.copyright_edit = QLineEdit()
+        self.narrator_edit = ExistingValuesEdit()
+        self.series_edit = ExistingValuesEdit()
+        self.series_number_edit = ExistingValuesEdit()
+        self.publisher_edit = ExistingValuesEdit()
+        self.date_edit = ExistingValuesEdit()
+        self.composer_edit = ExistingValuesEdit()
+        self.comment_edit = ExistingValuesEdit()
+        self.id3v1_comment_edit = ExistingValuesEdit()
+        self.copyright_edit = ExistingValuesEdit()
         self.description_edit = QPlainTextEdit()
         self.description_edit.setMaximumHeight(120)
 
@@ -158,8 +159,18 @@ class MetadataPanel(QWidget):
     def field_names(self):
         return tuple(self._editors)
 
+    def set_existing_values(self, baselines):
+        """Present ordered accepted multi-file values without changing edit intent."""
+        for field, widget in self._editors.items():
+            if isinstance(widget, ExistingValuesEdit):
+                widget.set_existing_values(
+                    [baseline[field] for baseline in baselines if field in baseline]
+                    if len(baselines) > 1 else None
+                )
+
     def set_metadata(self, metadata):
         """Display editor values only; artwork and capabilities stay with the caller."""
+        self.set_existing_values(())
         self.set_field_values({field: getattr(metadata, field) for field in self._editors})
 
     def set_field_values(self, values, *, mixed_fields=()):
@@ -172,7 +183,7 @@ class MetadataPanel(QWidget):
             text = "" if mixed or value is None else str(value)
             with QSignalBlocker(widget):
                 widget.setPlaceholderText(
-                    "<multiple values — edit to apply to all>" if mixed else ""
+                    MIXED_PLACEHOLDER if mixed else ""
                 )
                 if isinstance(widget, QPlainTextEdit):
                     widget.setPlainText(text)

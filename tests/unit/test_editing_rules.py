@@ -121,3 +121,25 @@ def test_combined_rules_and_no_input_mutation():
     snapshot = deepcopy((accepted, edited))
     changed_scalar_fields(accepted, edited)
     assert (accepted, edited) == snapshot
+
+
+@pytest.mark.parametrize('baseline,edited,intended,expected', [
+    ({'artist': 'A'}, Metadata(artist='A'), {'artist'}, set()),
+    ({'artist': 'B'}, Metadata(artist='A'), {'artist'}, {'artist'}),
+    ({'artist': ''}, Metadata(artist=''), {'artist'}, set()),
+    ({'artist': 'B'}, Metadata(artist=''), {'artist'}, {'artist'}),
+    ({'artist': 'A', 'album': 'X'}, Metadata(artist='A', album='Z'),
+     {'artist', 'album'}, {'album'}),
+    ({'artist': 'A'}, Metadata(artist='B'), set(), set()),
+    ({}, Metadata(artist=''), {'artist'}, {'artist'}),
+    ({'track_number': None, 'track_total': 4}, Metadata(track_number=None, track_total=5),
+     {'track_number', 'track_total'}, {'track_total'}),
+    ({'series_number': '01'}, Metadata(series_number='1'), {'series_number'}, {'series_number'}),
+])
+def test_effective_fields_for_target(baseline, edited, intended, expected):
+    from audio_metadata_editor.editing_rules import effective_fields_for_target
+    before = deepcopy((baseline, edited, intended))
+    result = effective_fields_for_target(intended, edited, baseline)
+    assert result == expected
+    result.clear()
+    assert (baseline, edited, intended) == before

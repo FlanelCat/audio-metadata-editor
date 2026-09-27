@@ -25,7 +25,7 @@ from PySide6.QtWidgets import (
     QToolBar,
 )
 
-from ..editing_rules import changed_scalar_fields, effective_multi_fields
+from ..editing_rules import changed_scalar_fields, effective_multi_fields, effective_fields_for_target
 from ..metadata.writer import write_metadata
 from .dialogs.auto_number_dialog import AutoNumberDialog
 from .dialogs.paste_fields_dialog import PasteFieldsDialog
@@ -466,6 +466,7 @@ class MainWindow(QMainWindow):
                     )
 
             except Exception as exc:
+                self.metadata_panel.set_existing_values(tuple(self._multi_field_baselines.values()))
                 self._update_dirty_indicators()
                 QMessageBox.critical(
                     self,
@@ -482,6 +483,7 @@ class MainWindow(QMainWindow):
             try:
                 metadatas = [self._read_after_write(Path(path)) for path in self.selected_files]
             except MetadataReadError as exc:
+                self.metadata_panel.set_existing_values(tuple(self._multi_field_baselines.values()))
                 self._update_dirty_indicators()
                 QMessageBox.critical(
                     self, "Readback Failed",
@@ -823,6 +825,7 @@ class MainWindow(QMainWindow):
                          for field in self.metadata_panel.field_names}
             for path, metadata in zip(self.selected_files, metadatas)
         }
+        self.metadata_panel.set_existing_values(tuple(self._multi_field_baselines.values()))
         self.metadata_panel.set_id3v1_comment_enabled(
             bool(self.selected_files)
             and all(Path(path).suffix.lower() == ".mp3" for path in self.selected_files)
@@ -1139,18 +1142,29 @@ class MainWindow(QMainWindow):
         dirty_paths = []
 
         if len(self.selected_files) > 1:
-            if self.multi_edit_fields or self._numeric_errors() or self._unresolved_multi_fields:
+            # Unresolved multi-save state is selection-wide, not per target.
+            # Cached equality cannot establish cleanliness after an uncertain save.
+            if self._numeric_errors() or self._unresolved_multi_fields:
                 dirty_paths = self.selected_files.copy()
-            elif self.multi_edit_artwork:
-                try:
-                    dirty_paths = [
-                        path for path in self.selected_files
-                        if self.pending_artwork is not None
-                        or read_metadata(Path(path)).artwork is not None
-                    ]
-                except MetadataReadError as exc:
-                    self.statusBar().showMessage(str(exc))
-                    return
+            else:
+                edited = self._get_edited_metadata()
+                dirty_paths = [
+                    path for path in self.selected_files
+                    if effective_fields_for_target(
+                        self.multi_edit_fields, edited,
+                        self._multi_field_baselines.get(Path(path), {}),
+                    )
+                ]
+                if self.multi_edit_artwork:
+                    try:
+                        dirty_paths.extend(
+                            path for path in self.selected_files
+                            if self.pending_artwork is not None
+                            or read_metadata(Path(path)).artwork is not None
+                        )
+                    except MetadataReadError as exc:
+                        self.statusBar().showMessage(str(exc))
+                        return
 
         elif self.current_file is not None and self._has_unsaved_changes():
             dirty_paths = [self.current_file]
@@ -1234,6 +1248,7 @@ class MainWindow(QMainWindow):
             self.file_list.update_file_metadata(path, metadata)
             del self._unverified_fields[path]
         if verified:
+            self.metadata_panel.set_existing_values(tuple(self._multi_field_baselines.values()))
             self.metadata_panel.set_field_values(common_updates, mixed_fields=mixed_fields)
             self._update_dirty_indicators()
 
@@ -1293,6 +1308,7 @@ class MainWindow(QMainWindow):
         saved_value = getattr(metadata, field)
         if path in self._multi_field_baselines:
             self._multi_field_baselines[path][field] = saved_value
+            self.metadata_panel.set_existing_values(tuple(self._multi_field_baselines.values()))
         if self.current_file == path and self.current_metadata is not None:
             setattr(self.current_metadata, field, saved_value)
             if len(self.selected_files) == 1:

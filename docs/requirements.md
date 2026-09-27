@@ -143,6 +143,8 @@ The list should allow the user to:
 
 The file list represents files, not database records.
 
+Filename sorting uses the actual filename, case-insensitively, in either direction. Adding or removing a dirty asterisk must not change row order; the marker is presentation only. Other metadata-column sorting remains unchanged.
+
 Every column automatically grows or shrinks to fit the wider of its complete header and widest displayed cell, including Qt style padding. Sizing considers all rows, including rows outside the viewport, and updates after loading a file set or changing displayed metadata. Empty tables and columns retain enough width for their headers.
 
 ## 11. Single-File Editing
@@ -164,6 +166,10 @@ A field should only be changed across the selected files when the user explicitl
 Fields that are not part of a multi-file edit must remain unchanged.
 
 Mixed values across selected files must not accidentally be replaced merely because the files were selected.
+
+During multi-selection, single-line scalar text editors offer an editable existing-values dropdown: Title, Artist, Album, Album Artist, Genre, Date, Composer, Comment, ID3v1 Comment, Publisher, Copyright, Narrator, Series and Series Number. Choices contain Empty (the actual empty string) followed by distinct accepted values in first-occurrence selected-file order, preserving case and whitespace. A literal existing value `Empty` is displayed quoted to distinguish it from clearing. Mixed values remain a placeholder, never a choice. Opening, navigating or dismissing the menu creates no intent; activating a value uses the same pending multi-edit rules as typing and never writes automatically. Users can continue typing arbitrary values or edit a chosen value. Common-value restoration remains clean unless persistence is unresolved.
+
+Choices refresh from accepted baselines after context changes, Save, Discard and verification, without replacing pending text or creating edit signals. Cancel retains the old context and choices. Values whose accepted baseline is unavailable after a failed write are not offered as known values. Single-file and empty contexts hide the dropdown. Existing format restrictions remain in force. Description retains its multiline editor in this checkpoint; numeric fields and artwork have no dropdowns.
 
 Selecting multiple files directly from an empty editing context must work without a preceding single-file selection. Closing with pending multi-file edits prompts for Save / Discard / Cancel using the selected-file count, never a previous single-file name. Save uses the existing multi-file save workflow; failed Save and Cancel prevent close and preserve pending state. Discard closes without writing pending edits.
 
@@ -194,6 +200,8 @@ The application must track whether each loaded file contains unsaved changes.
 Dirty state must be based on actual metadata differences rather than merely on UI events.
 
 Pending state represents effective unresolved edits. Restoring a multi-file field to its original common value removes that field's pending intent without affecting other edits. For genuinely mixed values, explicitly entering a value (including blank) remains pending if any selected target differs; Save still applies that intended field across the selection. `series_number` remains a string.
+
+Multi-file row asterisks reflect each file's effective pending changes across all intended fields and applicable artwork operations. A file already matching every intended scalar value remains unmarked even when the selection has pending intent. Missing accepted values cannot prove equality. Invalid numeric input and unresolved multi-file Save state conservatively mark the selection; the latter is tracked by field across the selection, not per file. These indicators do not alter which targets Save writes.
 
 Nonblank invalid numeric input is pending even before successful validation, including when the saved number is blank. Save uses the existing validation messages and focuses/selects the invalid input without writing. Save / Discard / Cancel guards protect this input during selection changes, directory changes, Refresh and close; Discard reloads saved values when continuing to edit, and correction/restoration recalculates pending state.
 

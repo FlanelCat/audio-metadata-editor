@@ -17,6 +17,18 @@ def changed_scalar_fields(accepted: Metadata, edited: Metadata) -> set[str]:
             if getattr(accepted, field) != getattr(edited, field)}
 
 
+def effective_fields_for_target(
+    intended_fields: Set[str], edited: Metadata, baseline: Mapping[str, object],
+) -> set[str]:
+    """Return intended scalar differences; a missing value cannot prove equality.
+
+    This is presentation comparison only. Callers retain validation, uncertainty,
+    artwork and save policy independently of this result.
+    """
+    return {field for field in intended_fields
+            if field not in baseline or getattr(edited, field) != baseline[field]}
+
+
 def effective_multi_fields(
     intended_fields: Set[str],
     edited: Metadata,

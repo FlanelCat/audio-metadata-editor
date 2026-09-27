@@ -23,6 +23,18 @@ from ..metadata.errors import MetadataReadError
 
 AUDIO_EXTENSIONS = {".mp3", ".m4b"}
 
+class FilenameTableWidgetItem(QTableWidgetItem):
+    """Keep filename identity and sorting independent of status decoration."""
+
+    def __init__(self, path: Path):
+        super().__init__(path.name)
+        self.setData(256, str(path))
+        self.setData(257, path.name)
+
+    def __lt__(self, other):
+        return self.data(257).casefold() < other.data(257).casefold()
+
+
 class SortableTableWidgetItem(QTableWidgetItem):
     def __lt__(self, other):
         column = self.column()
@@ -265,7 +277,7 @@ class FileList(QTableWidget):
                 self.setItem(
                     row,
                     0,
-                    SortableTableWidgetItem(file_path.name),
+                    FilenameTableWidgetItem(file_path),
                 )
 
                 track = ""
@@ -312,11 +324,6 @@ class FileList(QTableWidget):
                     row,
                     7,
                     SortableTableWidgetItem(metadata.narrator),
-                )
-
-                self.item(row, 0).setData(
-                    256,
-                    str(file_path),
                 )
 
                 for column in range(1, self.columnCount()):
@@ -482,8 +489,9 @@ class FileList(QTableWidget):
     def set_dirty_files(self, paths):
         dirty_paths = {str(path) for path in paths}
 
-        for row in range(self.rowCount()):
-            item = self.item(row, 0)
+        # Keep iteration tied to item identity, independent of row positions.
+        items = [self.item(row, 0) for row in range(self.rowCount())]
+        for item in items:
 
             if item is None:
                 continue
