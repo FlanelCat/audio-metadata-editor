@@ -22,6 +22,7 @@ Thumbs.db
 # Local audio fixtures
 tests/*
 !tests/ui/
+!tests/unit/
 !tests/fixtures/
 !tests/integration/
 !tests/conftest.py

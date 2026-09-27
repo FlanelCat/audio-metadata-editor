@@ -1,4 +1,3 @@
-from dataclasses import fields as metadata_fields
 from pathlib import Path
 
 from PySide6.QtCore import (
@@ -26,6 +25,7 @@ from PySide6.QtWidgets import (
     QToolBar,
 )
 
+from ..editing_rules import changed_scalar_fields, effective_multi_fields
 from ..metadata.writer import write_metadata
 from .dialogs.auto_number_dialog import AutoNumberDialog
 from .dialogs.paste_fields_dialog import PasteFieldsDialog
@@ -525,11 +525,7 @@ class MainWindow(QMainWindow):
             return
 
         metadata = self._get_edited_metadata()
-        changed_fields = {
-            field.name for field in metadata_fields(metadata)
-            if field.name not in {"artwork", "artwork_mime"}
-            and getattr(metadata, field.name) != getattr(self.current_metadata, field.name)
-        }
+        changed_fields = changed_scalar_fields(self.current_metadata, metadata)
         changed_fields.update(self._unresolved_single_fields - {"artwork"})
         artwork_options = {}
         if (
@@ -629,25 +625,7 @@ class MainWindow(QMainWindow):
 
         return (
             self.artwork_edited
-            or edited.title != loaded.title
-            or edited.artist != loaded.artist
-            or edited.album != loaded.album
-            or edited.album_artist != loaded.album_artist
-            or edited.genre != loaded.genre
-            or edited.track_number != loaded.track_number
-            or edited.track_total != loaded.track_total
-            or edited.disc_number != loaded.disc_number
-            or edited.disc_total != loaded.disc_total
-            or edited.date != loaded.date
-            or edited.composer != loaded.composer
-            or edited.comment != loaded.comment
-            or edited.id3v1_comment != loaded.id3v1_comment
-            or edited.copyright != loaded.copyright
-            or edited.description != loaded.description
-            or edited.publisher != loaded.publisher
-            or edited.narrator != loaded.narrator
-            or edited.series != loaded.series
-            or edited.series_number != loaded.series_number
+            or bool(changed_scalar_fields(loaded, edited))
             or self.pending_artwork != loaded.artwork
             or self.pending_artwork_mime != loaded.artwork_mime
         )
@@ -886,20 +864,19 @@ class MainWindow(QMainWindow):
             self._update_multi_edit_visuals()
 
     def _update_multi_edit_visuals(self):
-        self.multi_edit_fields.update(self._unresolved_multi_fields - {"artwork"})
+        unresolved_scalars = self._unresolved_multi_fields - {"artwork"}
         if "artwork" in self._unresolved_multi_fields:
             self.multi_edit_artwork = self.artwork_edited = True
-        if self.multi_edit_fields and self._multi_field_baselines:
-            edited = self._get_edited_metadata()
-            restored = {
-                field for field in (
-                    self.multi_edit_fields - self._invalid_numeric_fields()
-                    - self._unresolved_multi_fields
-                )
-                if all(field in baseline and getattr(edited, field) == baseline[field]
-                       for baseline in self._multi_field_baselines.values())
-            }
-            self.multi_edit_fields.difference_update(restored)
+        if self.multi_edit_fields or unresolved_scalars:
+            effective = effective_multi_fields(
+                self.multi_edit_fields,
+                self._get_edited_metadata(),
+                tuple(self._multi_field_baselines.values()),
+                invalid_fields=self._invalid_numeric_fields(),
+                unresolved_fields=unresolved_scalars,
+            )
+            self.multi_edit_fields.clear()
+            self.multi_edit_fields.update(effective)
         self.metadata_panel.set_highlighted_fields(self.multi_edit_fields)
 
         if len(self.selected_files) > 1:
