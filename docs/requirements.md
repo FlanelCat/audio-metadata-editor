@@ -81,6 +81,8 @@ Pressing Enter must:
 * leave no dirty state caused solely by the saved edit; and
 * continue editing in the same column of the next row when one exists.
 
+Each table editor is associated with its file and logical column before committing. Sorting caused by the commit must not change the save target. After a verified save, advance to the row after the saved file in the post-save/post-sort visual order, in the same column; stop if the saved file is last. Invalid numeric Enter leaves the accepted cell unchanged, keeps the invalid input focused and selected, and neither writes nor advances. Automatically opened editors follow the same rules as mouse-opened editors.
+
 Merely entering, selecting, or navigating through table cells must not write metadata.
 
 ### Metadata Panel

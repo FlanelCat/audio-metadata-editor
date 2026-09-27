@@ -3,6 +3,7 @@ from pathlib import Path
 from PySide6.QtCore import (
     QEvent,
     QItemSelectionModel,
+    QPersistentModelIndex,
     QSignalBlocker,
     Signal,
     QUrl,
@@ -62,6 +63,18 @@ class EnterNavigationDelegate(QStyledItemDelegate):
         super().__init__(parent)
         self._enter_commit = False
 
+    def createEditor(self, parent, option, index):
+        editor = super().createEditor(parent, option, index)
+        if editor is not None:
+            # Established for every lifecycle, including automatic Enter advance.
+            # The persistent index follows sorting; its model retains the accepted
+            # value until a valid Enter commit. No table-wide previous value.
+            editor._metadata_context = (
+                index.siblingAtColumn(0).data(Qt.ItemDataRole.UserRole),
+                QPersistentModelIndex(index),
+            )
+        return editor
+
     def setModelData(self, editor, model, index):
         # Qt also requests commits on focus loss and Tab. Those only abandon
         # the transient editor; the accepted table value must remain intact.
@@ -78,13 +91,25 @@ class EnterNavigationDelegate(QStyledItemDelegate):
             if not isinstance(view, QTableWidget):
                 return super().eventFilter(editor, event)
 
-            current = view.currentIndex()
-            row = current.row()
-            column = current.column()
-
-            # Only metadata columns are eligible; never process Filename.
-            if row < 0 or column < 1 or column > 7:
+            context = getattr(editor, "_metadata_context", None)
+            if context is None or not isinstance(editor, QLineEdit):
                 return super().eventFilter(editor, event)
+            path, index = context
+            column = index.column()
+            if not path or not index.isValid() or not 1 <= column <= 7:
+                return True
+            value = editor.text()
+            # Reject before Qt changes the accepted value or sorts the row.
+            # Preserve the table's positive-number rules and blank allowance.
+            if column in (1, 6) and value.strip():
+                try:
+                    number = int(value) if column == 1 else float(value)
+                    if number < 1:
+                        raise ValueError
+                except ValueError:
+                    editor.setFocus()
+                    editor.selectAll()
+                    return True
 
             # Commit the edit before requesting an immediate disk save.
             self._enter_commit = True
@@ -97,23 +122,17 @@ class EnterNavigationDelegate(QStyledItemDelegate):
                 QStyledItemDelegate.EndEditHint.NoHint,
             )
 
-            item = view.item(row, column)
-            filename_item = view.item(row, 0)
-
-            if item is not None and filename_item is not None:
-                path = filename_item.data(256)
-                if path:
-                    view.cell_save_succeeded = True
-                    self.save_cell_requested.emit(
-                        str(path),
-                        column,
-                        item.text(),
-                    )
+            view.cell_save_succeeded = True
+            self.save_cell_requested.emit(str(path), column, value)
 
             if not view.cell_save_succeeded:
                 return True
 
             # Stop at the bottom; do not wrap around.
+            row = next((r for r in range(view.rowCount())
+                        if view.item(r, 0).data(256) == path), None)
+            if row is None:
+                return True
             next_row = row + 1
             if next_row < view.rowCount():
                 next_path = view.item(next_row, 0).data(256)
@@ -194,7 +213,6 @@ class FileList(QTableWidget):
         self.itemSelectionChanged.connect(self._selection_changed)
         self.itemDoubleClicked.connect(self._item_double_clicked)
         self.itemChanged.connect(self._item_changed)
-        self._editing_previous_value = ""
         delegate = EnterNavigationDelegate(self)
         delegate.save_cell_requested.connect(self.save_cell_requested)
         self.setItemDelegate(delegate)
@@ -374,28 +392,6 @@ class FileList(QTableWidget):
 
         value = item.text().strip()
 
-        # Track number must be a positive integer.
-        if column == 1 and value:
-            try:
-                number = int(value)
-                if number < 1:
-                    raise ValueError
-            except ValueError:
-                with QSignalBlocker(self):
-                    item.setText(self._editing_previous_value)
-                return
-
-        # Series number must be a positive number.
-        if column == 6 and value:
-            try:
-                number = float(value)
-                if number < 1:
-                    raise ValueError
-            except ValueError:
-                with QSignalBlocker(self):
-                    item.setText(self._editing_previous_value)
-                return
-
         self.metadata_cell_edited.emit(
             path,
             column,
@@ -414,8 +410,6 @@ class FileList(QTableWidget):
                 QUrl.fromLocalFile(path)
             )
             return
-
-        self._editing_previous_value = item.text()
 
     def select_file(self, path):
         for row in range(self.rowCount()):
