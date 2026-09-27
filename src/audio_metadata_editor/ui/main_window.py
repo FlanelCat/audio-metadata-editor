@@ -1196,14 +1196,19 @@ class MainWindow(QMainWindow):
             except Exception:
                 pass
 
-    def _verify_field_saves(self):
-        """Finish failed immediate-save readbacks without issuing another write."""
-        verified = {path: self._read_after_write(path) for path in self._unverified_fields}
+    def _verify_field_saves(self, paths=None):
+        """Accept disk truth for immediate writes, without replaying them.
+
+        Writer-exception recovery can restrict verification to its affected path.
+        """
+        paths = self._unverified_fields if paths is None else paths
+        verified = {path: self._read_after_write(path) for path in paths}
         common_updates = {}
         mixed_fields = set()
         if verified and len(self.selected_files) > 1:
             metadatas = [self._read_after_write(Path(path)) for path in self.selected_files]
-            for field in set().union(*self._unverified_fields.values()) - self.multi_edit_fields:
+            fields = set().union(*(self._unverified_fields[path] for path in verified))
+            for field in fields - self.multi_edit_fields:
                 value, common = self._common_metadata_value(metadatas, field)
                 common_updates[field] = value
                 if not common:
@@ -1232,6 +1237,8 @@ class MainWindow(QMainWindow):
             self.metadata_panel.set_field_values(common_updates, mixed_fields=mixed_fields)
             self._update_dirty_indicators()
 
+        return verified
+
     def _read_after_write(self, path):
         try:
             return read_metadata(path)
@@ -1244,9 +1251,35 @@ class MainWindow(QMainWindow):
     def _save_metadata_field(self, path, field, value):
         """Persist one field and synchronize only its panel baseline."""
         metadata = read_metadata(path)
-        if getattr(metadata, field) != value:
+        previous_value = getattr(metadata, field)
+        if previous_value != value:
             setattr(metadata, field, value)
-            write_metadata(path, metadata, fields={field})
+            # Invocation may modify disk even if the writer subsequently raises.
+            self._unverified_fields.setdefault(path, set()).add(field)
+            try:
+                write_metadata(path, metadata, fields={field})
+            except Exception as exc:
+                self._update_dirty_indicators()
+                try:
+                    verified = self._verify_field_saves((path,))
+                except MetadataReadError as recovery_error:
+                    outcome = (
+                        "The file may have changed. Recovery could not verify the file; "
+                        f"the field remains unresolved.\n{recovery_error}"
+                    )
+                else:
+                    actual = getattr(verified[path], field)
+                    if actual == value:
+                        outcome = "Recovery read found the requested field value."
+                    elif actual == previous_value:
+                        outcome = "Recovery read found the pre-write field value."
+                    else:
+                        outcome = "Recovery read found a different field value; accepted current disk state."
+                # Even a verified requested value does not turn a writer failure
+                # into successful Enter navigation or further Auto-number writes.
+                raise RuntimeError(
+                    f"Write operation failed: {exc}\n{outcome}\nNo rollback was attempted."
+                ) from exc
         try:
             metadata = self._read_after_write(path)
         except MetadataReadError:
@@ -1297,7 +1330,8 @@ class MainWindow(QMainWindow):
                     QMessageBox.critical(
                         self, "Auto-number Tracks Failed",
                         f"Could not number:\n{path}\n\n{exc}\n\n"
-                        f"{saved} file(s) saved and verified. Remaining files were not processed.",
+                        f"{saved} file(s) saved and verified before this failure.\n"
+                        "Current file outcome is described above; later files were not attempted.",
                     )
                     return
             if len(self.selected_files) > 1:
