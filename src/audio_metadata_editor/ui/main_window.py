@@ -66,6 +66,8 @@ class MainWindow(QMainWindow):
         self._context_index = QPersistentModelIndex()
         self.multi_edit_fields = set()
         self._multi_field_baselines = {}
+        # Unresolved selection-wide intent cannot be dropped by cached comparison.
+        self._unresolved_multi_fields = set()
         self.current_metadata = None
         # Immediate writes awaiting a successful readback, not new panel edits.
         self._unverified_fields = {}
@@ -206,6 +208,7 @@ class MainWindow(QMainWindow):
         return True
 
     def _clear_editing_context(self):
+        self._unresolved_multi_fields.clear()
         self._unverified_fields.clear()
         self._multi_field_baselines.clear()
         self.current_file = None
@@ -338,6 +341,7 @@ class MainWindow(QMainWindow):
         return True
 
     def _load_single_file(self, path, metadata):
+        self._unresolved_multi_fields.clear()
         self._multi_field_baselines.clear()
         new_file = Path(path)
         self._unverified_fields.pop(new_file, None)
@@ -391,6 +395,10 @@ class MainWindow(QMainWindow):
                 return
 
             edited_metadata = self._get_edited_metadata()
+            self._unresolved_multi_fields.update(self.multi_edit_fields)
+            if self.multi_edit_artwork:
+                self._unresolved_multi_fields.add("artwork")
+            verified_writes = 0
 
             try:
                 for path_string in self.selected_files:
@@ -441,6 +449,7 @@ class MainWindow(QMainWindow):
                         )
 
                     metadata = self._read_after_write(path)
+                    verified_writes += 1
                     for field in self.multi_edit_fields:
                         baseline[field] = getattr(metadata, field)
                     if self.current_file == path:
@@ -451,20 +460,33 @@ class MainWindow(QMainWindow):
                     )
 
             except Exception as exc:
+                self._update_dirty_indicators()
                 QMessageBox.critical(
                     self,
                     "Save Failed",
-                    f"Could not complete saving the selected files:\n\n{exc}\n\n"
-                    "Earlier writes remain saved; no rollback was attempted.",
+                    f"Could not complete saving {path}:\n\n{exc}\n\n"
+                    f"Writes completed and verified: {verified_writes}.\n"
+                    "Earlier writes remain saved; no rollback was attempted.\n"
+                    "If writing started, the failing file may have been changed.\n"
+                    "Files later in the save order were not attempted.\n"
+                    "Save again reapplies the current pending changes to the selected files.",
                 )
                 return
 
             try:
                 metadatas = [self._read_after_write(Path(path)) for path in self.selected_files]
             except MetadataReadError as exc:
-                QMessageBox.critical(self, "Readback Failed", str(exc))
+                self._update_dirty_indicators()
+                QMessageBox.critical(
+                    self, "Readback Failed",
+                    f"{exc}\n\nWrites completed and verified: {verified_writes}.\n"
+                    "Could not reload the selected files after saving.\n"
+                    "Completed writes remain saved; no rollback was attempted.\n"
+                    "Save again reapplies the current pending changes to the selected files.",
+                )
                 return
 
+            self._unresolved_multi_fields.clear()
             self.multi_edit_fields.clear()
             self.multi_edit_artwork = False
             self.artwork_edited = False
@@ -575,6 +597,7 @@ class MainWindow(QMainWindow):
             return bool(
                 self.multi_edit_fields
                 or self.multi_edit_artwork
+                or self._unresolved_multi_fields
             )
 
         if self.current_metadata is None:
@@ -790,6 +813,8 @@ class MainWindow(QMainWindow):
         return None, False
 
     def _show_common_metadata(self, metadatas):
+        # Only called with successfully loaded metadata for an accepted context.
+        self._unresolved_multi_fields.clear()
         # Accepted scalar values only: no disk reads while the user edits.
         # A missing field means an attempted save has not been verified.
         self._multi_field_baselines = {
@@ -838,10 +863,16 @@ class MainWindow(QMainWindow):
             self._update_multi_edit_visuals()
 
     def _update_multi_edit_visuals(self):
+        self.multi_edit_fields.update(self._unresolved_multi_fields - {"artwork"})
+        if "artwork" in self._unresolved_multi_fields:
+            self.multi_edit_artwork = self.artwork_edited = True
         if self.multi_edit_fields and self._multi_field_baselines:
             edited = self._get_edited_metadata()
             restored = {
-                field for field in self.multi_edit_fields - self._invalid_numeric_fields()
+                field for field in (
+                    self.multi_edit_fields - self._invalid_numeric_fields()
+                    - self._unresolved_multi_fields
+                )
                 if all(field in baseline and getattr(edited, field) == baseline[field]
                        for baseline in self._multi_field_baselines.values())
             }
@@ -1108,7 +1139,7 @@ class MainWindow(QMainWindow):
         dirty_paths = []
 
         if len(self.selected_files) > 1:
-            if self.multi_edit_fields or self._numeric_errors():
+            if self.multi_edit_fields or self._numeric_errors() or self._unresolved_multi_fields:
                 dirty_paths = self.selected_files.copy()
             elif self.multi_edit_artwork:
                 try:
@@ -1269,6 +1300,8 @@ class MainWindow(QMainWindow):
                     return
             if len(self.selected_files) > 1:
                 self._refresh_selected_tracks()
+                # Preserve Auto-number's existing successful Track-intent reset.
+                self._unresolved_multi_fields.discard("track_number")
                 self.multi_edit_fields.discard("track_number")
                 self._update_multi_edit_visuals()
             self.statusBar().showMessage(f"Auto-numbered {saved} file(s).")
