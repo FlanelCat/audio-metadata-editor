@@ -227,100 +227,111 @@ class FileList(QTableWidget):
         super().selectionChanged(selected, deselected)
 
     def load_directory(self, directory: Path):
-        self.setRowCount(0)
-        # Qt may retain old content widths when the model becomes empty.
-        self.resizeColumnsToContents()
-
+        sorting = self.isSortingEnabled()
+        header = self.horizontalHeader()
+        sort_column = header.sortIndicatorSection()
+        sort_order = header.sortIndicatorOrder()
+        # Populate each complete file row, including its path, before Qt may
+        # move it. Numeric row positions are only stable while sorting is off.
+        self.setSortingEnabled(False)
         try:
-            files = sorted(
-                (
-                    entry
-                    for entry in directory.iterdir()
-                    if entry.is_file()
-                    and entry.suffix.lower() in AUDIO_EXTENSIONS
-                ),
-                key=lambda entry: entry.name.lower(),
-            )
-        except OSError:
-            return
+            self.setRowCount(0)
+            # Qt may retain old content widths when the model becomes empty.
+            self.resizeColumnsToContents()
 
-        errors = []
-        for file_path in files:
             try:
-                metadata = read_metadata(file_path)
-            except MetadataReadError as exc:
-                errors.append(exc)
-                continue
-            row = self.rowCount()
-            self.insertRow(row)
+                files = sorted(
+                    (
+                        entry
+                        for entry in directory.iterdir()
+                        if entry.is_file()
+                        and entry.suffix.lower() in AUDIO_EXTENSIONS
+                    ),
+                    key=lambda entry: entry.name.lower(),
+                )
+            except OSError:
+                return
 
-            self.setItem(
-                row,
-                0,
-                SortableTableWidgetItem(file_path.name),
-            )
+            errors = []
+            for file_path in files:
+                try:
+                    metadata = read_metadata(file_path)
+                except MetadataReadError as exc:
+                    errors.append(exc)
+                    continue
+                row = self.rowCount()
+                self.insertRow(row)
 
-            track = ""
-            if metadata.track_number is not None:
-                track = str(metadata.track_number)
+                self.setItem(
+                    row,
+                    0,
+                    SortableTableWidgetItem(file_path.name),
+                )
 
-            self.setItem(
-                row,
-                1,
-                SortableTableWidgetItem(track),
-            )
+                track = ""
+                if metadata.track_number is not None:
+                    track = str(metadata.track_number)
 
-            self.setItem(
-                row,
-                2,
-                SortableTableWidgetItem(metadata.title),
-            )
+                self.setItem(
+                    row,
+                    1,
+                    SortableTableWidgetItem(track),
+                )
 
-            self.setItem(
-                row,
-                3,
-                SortableTableWidgetItem(metadata.artist),
-            )
+                self.setItem(
+                    row,
+                    2,
+                    SortableTableWidgetItem(metadata.title),
+                )
 
-            self.setItem(
-                row,
-                4,
-                SortableTableWidgetItem(metadata.album),
-            )
+                self.setItem(
+                    row,
+                    3,
+                    SortableTableWidgetItem(metadata.artist),
+                )
 
-            self.setItem(
-                row,
-                5,
-                SortableTableWidgetItem(metadata.series),
-            )
+                self.setItem(
+                    row,
+                    4,
+                    SortableTableWidgetItem(metadata.album),
+                )
 
-            self.setItem(
-                row,
-                6,
-                SortableTableWidgetItem(metadata.series_number),
-            )
+                self.setItem(
+                    row,
+                    5,
+                    SortableTableWidgetItem(metadata.series),
+                )
 
-            self.setItem(
-                row,
-                7,
-                SortableTableWidgetItem(metadata.narrator),
-            )
+                self.setItem(
+                    row,
+                    6,
+                    SortableTableWidgetItem(metadata.series_number),
+                )
 
-            self.item(row, 0).setData(
-                256,
-                str(file_path),
-            )
+                self.setItem(
+                    row,
+                    7,
+                    SortableTableWidgetItem(metadata.narrator),
+                )
 
-            for column in range(1, self.columnCount()):
-                item = self.item(row, column)
+                self.item(row, 0).setData(
+                    256,
+                    str(file_path),
+                )
 
-                if item is not None:
-                    item.setFlags(
-                        item.flags()
-                        | Qt.ItemFlag.ItemIsEditable
-                    )
+                for column in range(1, self.columnCount()):
+                    item = self.item(row, column)
 
-        return errors
+                    if item is not None:
+                        item.setFlags(
+                            item.flags()
+                            | Qt.ItemFlag.ItemIsEditable
+                        )
+
+            return errors
+        finally:
+            header.setSortIndicator(sort_column, sort_order)
+            self.setSortingEnabled(sorting)
 
     def selected_paths_in_row_order(self):
         rows = sorted(index.row() for index in self.selectionModel().selectedRows())
