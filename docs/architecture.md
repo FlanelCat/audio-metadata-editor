@@ -213,6 +213,8 @@ Refactoring should be incremental and driven by concrete requirements or testing
 
 `ui/directory_tree.py` owns the folder tree, lazy expansion, placeholders, directory filtering/sorting, and current-item presentation. Clicks emit `directory_requested(path)`; `set_root`, `set_current_directory`, and `restore_current_directory` synchronize presentation without requesting navigation. MainWindow retains the root navigation choice, Save / Discard / Cancel guard, FileList loading, editing-context cleanup and status updates. Rejected navigation restores the last accepted tree item. Refresh remains a guarded rebuild followed by loading the root directory, with no file selection restored; the guard runs before the tree is rebuilt.
 
+MainWindow keeps `_unresolved_single_fields` for the current single-file panel context: logical scalar names plus optional `artwork`. Ordinary pending state compares panel values with the accepted baseline; this separate set records attempted persistence whose acceptance remains unresolved. It is established immediately before the writer, survives writer/readback failures and cached-value restoration, and extends the next panel write's field set using current panel values. It clears after verified Save and synchronization, successful Discard/reload, or guarded context replacement. A verified explicit immediate field save resolves only that field. `_unverified_fields` remains distinct: it retries immediate-write verification without rewriting; verification must preserve overlapping unresolved panel values. Neither state is a persistent metadata store.
+
 MainWindow keeps `_unresolved_multi_fields`, a set of logical scalar fields and optionally `artwork`, for multi-panel Save uncertainty. After validation and before the first preservation read, the current save intent is added to this set. Cached comparisons cannot remove these fields from pending intent; current panel values still determine what the next Save applies selection-wide. The set survives pre-write reads failing, writer exceptions, per-file readback failures and final common/mixed read failures. It clears after a complete Save including final reads, or a successful Discard reload; accepting a new editing context resets it after the existing guard. Failed reload and Cancel preserve it. Successful Auto-number retains its existing Track-intent reset: only after all immediate writes/readbacks and the final common-track read succeed does it also resolve `track_number` in this set; other unresolved fields remain. Unresolved selections remain visibly dirty. This is distinct from `_unverified_fields`, which supports verification-only retry of immediate field saves; it contains no completed-file list or value snapshot and does not change Enter-save or Auto-number policy.
 
 ## 10. File List
@@ -354,7 +356,7 @@ pending metadata != loaded metadata
               dirty
 ```
 
-If the user restores all values to their original state, the file should become clean again.
+If the user restores all values to their accepted state, the file should become clean again, provided no persistence uncertainty remains.
 
 Entering a field, leaving a field, pressing Enter, selecting another cell, or otherwise navigating the UI must not by itself create dirty state.
 

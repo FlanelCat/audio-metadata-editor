@@ -68,6 +68,9 @@ class MainWindow(QMainWindow):
         self._multi_field_baselines = {}
         # Unresolved selection-wide intent cannot be dropped by cached comparison.
         self._unresolved_multi_fields = set()
+        # Current single-panel intent whose attempted persistence is unresolved.
+        # Unlike immediate-write verification, Save reapplies current values.
+        self._unresolved_single_fields = set()
         self.current_metadata = None
         # Immediate writes awaiting a successful readback, not new panel edits.
         self._unverified_fields = {}
@@ -208,6 +211,7 @@ class MainWindow(QMainWindow):
         return True
 
     def _clear_editing_context(self):
+        self._unresolved_single_fields.clear()
         self._unresolved_multi_fields.clear()
         self._unverified_fields.clear()
         self._multi_field_baselines.clear()
@@ -337,10 +341,12 @@ class MainWindow(QMainWindow):
         except MetadataReadError as exc:
             QMessageBox.critical(self, "Read Failed", str(exc))
             return False
+        self.file_list.update_file_metadata(Path(path), metadata)
         self._load_single_file(path, metadata)
         return True
 
     def _load_single_file(self, path, metadata):
+        self._unresolved_single_fields.clear()
         self._unresolved_multi_fields.clear()
         self._multi_field_baselines.clear()
         new_file = Path(path)
@@ -524,9 +530,11 @@ class MainWindow(QMainWindow):
             if field.name not in {"artwork", "artwork_mime"}
             and getattr(metadata, field.name) != getattr(self.current_metadata, field.name)
         }
+        changed_fields.update(self._unresolved_single_fields - {"artwork"})
         artwork_options = {}
         if (
-            self.artwork_edited
+            "artwork" in self._unresolved_single_fields
+            or self.artwork_edited
             or self.pending_artwork != self.current_metadata.artwork
             or self.pending_artwork_mime != self.current_metadata.artwork_mime
         ):
@@ -534,6 +542,12 @@ class MainWindow(QMainWindow):
                 "artwork": self.pending_artwork,
                 "artwork_mime": self.pending_artwork_mime,
             }
+
+        # A writer can modify the file and then raise. Stale baseline equality
+        # must not discard any attempted logical field, even on writer failure.
+        self._unresolved_single_fields.update(changed_fields)
+        if artwork_options:
+            self._unresolved_single_fields.add("artwork")
 
         try:
             suffix = self.current_file.suffix.lower()
@@ -565,7 +579,9 @@ class MainWindow(QMainWindow):
             QMessageBox.critical(
                 self,
                 "Save Failed",
-                f"Could not save the file:\n\n{exc}",
+                f"Could not save the file:\n\n{exc}\n\n"
+                "The file may have changed; its metadata state could not be confirmed.\n"
+                "No rollback was attempted. Save again reapplies the current panel values.",
             )
             return
 
@@ -580,6 +596,9 @@ class MainWindow(QMainWindow):
             metadata,
         )
 
+        self._unresolved_single_fields.difference_update(changed_fields)
+        if artwork_options:
+            self._unresolved_single_fields.discard("artwork")
         self._update_dirty_indicators()
 
         QMessageBox.information(
@@ -600,6 +619,8 @@ class MainWindow(QMainWindow):
                 or self._unresolved_multi_fields
             )
 
+        if self._unresolved_single_fields:
+            return True
         if self.current_metadata is None:
             return False
 
@@ -668,6 +689,7 @@ class MainWindow(QMainWindow):
         if len(self.selected_files) == 1:
             path = Path(self.selected_files[0])
 
+            self._unresolved_single_fields.clear()
             self.current_metadata = metadatas[0]
 
             self.multi_edit_fields.clear()
@@ -814,6 +836,7 @@ class MainWindow(QMainWindow):
 
     def _show_common_metadata(self, metadatas):
         # Only called with successfully loaded metadata for an accepted context.
+        self._unresolved_single_fields.clear()
         self._unresolved_multi_fields.clear()
         # Accepted scalar values only: no disk reads while the user edits.
         # A missing field means an attempted save has not been verified.
@@ -1217,6 +1240,7 @@ class MainWindow(QMainWindow):
                 edited = self._get_edited_metadata()
                 unchanged = {
                     field for field in fields - self._invalid_numeric_fields()
+                    - self._unresolved_single_fields
                     if getattr(edited, field) == getattr(self.current_metadata, field)
                 }
                 for field in fields:
@@ -1263,6 +1287,7 @@ class MainWindow(QMainWindow):
             setattr(self.current_metadata, field, saved_value)
             if len(self.selected_files) == 1:
                 self.metadata_panel.set_field_values({field: saved_value})
+                self._unresolved_single_fields.discard(field)
         self.file_list.update_file_metadata(path, metadata)
         self._update_dirty_indicators()
 

@@ -15,7 +15,7 @@ def window(request, tmp_path, qtbot, monkeypatch, audio_fixture_dir):
         shutil.copy2(audio_fixture_dir / f'silence.{request.param}',
                      tmp_path / f'{name}.{request.param}')
     win = MainWindow()
-    qtbot.addWidget(win, before_close_func=lambda w: setattr(w, 'current_metadata', None))
+    qtbot.addWidget(win, before_close_func=lambda w: w._clear_editing_context())
     win.file_list.setSortingEnabled(False)
     win.file_list.load_directory(tmp_path)
     win.show()
