@@ -1,4 +1,5 @@
 from pathlib import Path
+from html import escape
 
 from PySide6.QtCore import (
     QEvent,
@@ -487,6 +488,36 @@ class FileList(QTableWidget):
                 restored_paths.append(path)
 
         self.files_selected.emit(restored_paths)
+
+    def show_pending_fields(self, path, values):
+        """Overlay scalar presentation without changing file identity or baselines."""
+        columns = {'track_number': 1, 'title': 2, 'artist': 3, 'album': 4,
+                   'series': 5, 'series_number': 6, 'narrator': 7}
+        item = next((self.item(row, 0) for row in range(self.rowCount())
+                     if self.item(row, 0).data(256) == str(path)), None)
+        if item is None:
+            return
+        sorting = self.isSortingEnabled()
+        with QSignalBlocker(self):
+            self.setSortingEnabled(False)
+            try:
+                for field, value in values.items():
+                    if field in columns:
+                        self.item(item.row(), columns[field]).setText('' if value is None else str(value))
+            finally:
+                self.setSortingEnabled(sorting)
+
+    def set_generated_previews(self, edits):
+        """Keep panel-only generated values inspectable on their file rows too."""
+        for row in range(self.rowCount()):
+            item = self.item(row, 0)
+            if item is None or not item.data(256):
+                continue
+            values = edits.get(Path(item.data(256)), {})
+            preview = '\n'.join(f"{field.replace('_', ' ').title()}: {value}"
+                                for field, value in values.items())
+            item.setToolTip('<pre>' + escape('Pending generated text\n' + preview) + '</pre>'
+                            if values else '')
 
     def set_dirty_files(self, paths):
         dirty_paths = {str(path) for path in paths}
