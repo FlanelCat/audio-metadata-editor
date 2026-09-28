@@ -65,7 +65,7 @@ def test_preview_cancel_and_visual_order(setup, monkeypatch):
     win, paths = setup
     win.file_list.sortItems(0, Qt.DescendingOrder)
     before = {p: p.read_bytes() for p in paths}
-    state = deepcopy((win._multi_field_baselines, win.multi_edit_fields, win._generated_edits))
+    state = deepcopy((win._multi_field_baselines, win.multi_edit_fields, win._per_file_edits))
     def cancel(dialog):
         assert [p for p, _ in dialog.targets] == list(reversed(paths))
         dialog.template.setText('{index:02} {filename}')
@@ -74,7 +74,7 @@ def test_preview_cancel_and_visual_order(setup, monkeypatch):
         return QDialog.Rejected
     monkeypatch.setattr(GenerateTextDialog, 'exec', cancel)
     win._generate_text()
-    assert state == (win._multi_field_baselines, win.multi_edit_fields, win._generated_edits)
+    assert state == (win._multi_field_baselines, win.multi_edit_fields, win._per_file_edits)
     assert {p: p.read_bytes() for p in paths} == before
     def apply(dialog):
         dialog.template.setText('Part {index:02}')
@@ -82,7 +82,7 @@ def test_preview_cancel_and_visual_order(setup, monkeypatch):
         return dialog.result()
     monkeypatch.setattr(GenerateTextDialog, 'exec', apply)
     win._generate_text()
-    assert win._generated_edits[paths[2]]['title'] == 'Part 01'
+    assert win._per_file_edits[paths[2]]['title'] == 'Part 01'
     assert {p: p.read_bytes() for p in paths} == before
 
 
@@ -101,7 +101,7 @@ def test_apply_pending_presentation_and_save(setup):
     for p in paths:
         m = read_metadata(p)
         assert m.title == expected[p] and m.artist == 'Original' and m.track_total == 10
-    assert not win._generated_edits and not win._unresolved_generated_fields
+    assert not win._per_file_edits and not win._unresolved_per_file_fields
 
 
 def test_precedence_multiple_fields_and_regeneration(setup, qtbot):
@@ -111,9 +111,9 @@ def test_precedence_multiple_fields_and_regeneration(setup, qtbot):
     generated(win, paths, 'series', 'Series ')
     generated(win, paths, 'title', 'New ')
     assert win.multi_edit_fields == {'artist'}
-    assert all(set(win._generated_edits[p]) == {'title', 'series'} for p in paths)
+    assert all(set(win._per_file_edits[p]) == {'title', 'series'} for p in paths)
     qtbot.keyClicks(win.title_edit, 'Introduction')
-    assert all(set(win._generated_edits[p]) == {'series'} for p in paths)
+    assert all(set(win._per_file_edits[p]) == {'series'} for p in paths)
     assert win.multi_edit_fields == {'artist', 'title'}
     generated(win, paths, 'artist', 'Narrator ')
     assert win.multi_edit_fields == {'title'}
@@ -130,7 +130,7 @@ def test_single_pending_and_discard(setup):
     assert win.title_edit.text() == expected[paths[1]]
     assert read_metadata(paths[1]).title == 'Old'
     win._undo_changes()
-    assert win.title_edit.text() == 'Old' and not win._generated_edits
+    assert win.title_edit.text() == 'Old' and not win._per_file_edits
     generated(win, [paths[1]], prefix='Saved ')
     win._save_changes()
     assert read_metadata(paths[1]).title == 'Saved 01'
@@ -164,8 +164,8 @@ def test_partial_uncertainty_retry_and_discard(setup, monkeypatch, failure):
         patch.setattr(win, '_read_after_write', read)
         patch.setattr(QMessageBox, 'critical', lambda *a: None)
         win._save_changes()
-    assert win._has_unsaved_changes() and win._generated_edits
-    assert win._unresolved_generated_fields[paths[0]] == {'title'}
+    assert win._has_unsaved_changes() and win._per_file_edits
+    assert win._unresolved_per_file_fields[paths[0]] == {'title'}
     assert not win._unresolved_multi_fields
     assert read_metadata(paths[0]).title == expected[paths[0]]
     for p, row in rows(win).items():
@@ -177,7 +177,7 @@ def test_partial_uncertainty_retry_and_discard(setup, monkeypatch, failure):
     assert not win._has_unsaved_changes()
     generated(win, paths, prefix='Abandon ')
     win._undo_changes()
-    assert not win._generated_edits
+    assert not win._per_file_edits
     for p, row in rows(win).items():
         assert win.file_list.item(row, 2).text() == read_metadata(p).title
 
@@ -187,7 +187,7 @@ def test_cancel_guards(setup, monkeypatch, action, tmp_path):
     from PySide6.QtGui import QCloseEvent
     win, paths = setup
     generated(win, paths)
-    before = deepcopy(win._generated_edits)
+    before = deepcopy(win._per_file_edits)
     monkeypatch.setattr(QMessageBox, 'question', lambda *a: QMessageBox.Cancel)
     if action == 'selection':
         win.file_list.select_files([str(paths[0])])
@@ -201,7 +201,7 @@ def test_cancel_guards(setup, monkeypatch, action, tmp_path):
         event = QCloseEvent()
         win.closeEvent(event)
         assert not event.isAccepted()
-    assert win._generated_edits == before
+    assert win._per_file_edits == before
     assert win.selected_files == [str(p) for p in paths]
 
 
@@ -234,14 +234,14 @@ def test_uncertain_generated_to_common_and_back(setup, monkeypatch, qtbot, singl
         patch.setattr(module, writer_name, fail)
         patch.setattr(QMessageBox, 'critical', lambda *a: None)
         win._save_changes()
-    assert win._unresolved_generated_fields and win._has_unsaved_changes()
+    assert win._unresolved_per_file_fields and win._has_unsaved_changes()
     win.title_edit.selectAll()
     qtbot.keyClicks(win.title_edit, 'Common')
-    assert not any('title' in fields for fields in win._generated_edits.values())
+    assert not any('title' in fields for fields in win._per_file_edits.values())
     assert 'title' in (win._unresolved_single_fields if single else win._unresolved_multi_fields)
     generated(win, paths, prefix='Latest ')
     assert not win._unresolved_single_fields and not win._unresolved_multi_fields
-    assert win._unresolved_generated_fields
+    assert win._unresolved_per_file_fields
     win._save_changes()
     assert [read_metadata(p).title for p in paths] == [f'Latest {i:02}' for i in range(1, len(paths) + 1)]
     assert not win._has_unsaved_changes()
@@ -257,12 +257,12 @@ def test_discard_uncertainty_and_failed_reload(setup, monkeypatch):
         patch.setattr(win, '_read_after_write', fail)
         patch.setattr(QMessageBox, 'critical', lambda *a: None)
         win._save_changes()
-        before = deepcopy(win._generated_edits)
+        before = deepcopy(win._per_file_edits)
         patch.setattr(module, 'read_metadata', fail)
         win._undo_changes()
-        assert win._generated_edits == before and win._unresolved_generated_fields
+        assert win._per_file_edits == before and win._unresolved_per_file_fields
     win._undo_changes()
-    assert not win._has_unsaved_changes() and not win._generated_edits
+    assert not win._has_unsaved_changes() and not win._per_file_edits
     assert read_metadata(paths[0]).title == 'Written 01'
     assert read_metadata(paths[1]).title == 'Old'  # No rollback, no later write.
 
@@ -296,12 +296,12 @@ def test_immediate_verification_preserves_generated_intent(setup):
     win._unverified_fields[paths[0]] = {'title'}
     win._verify_field_saves()
     assert win._multi_field_baselines[paths[0]]['title'] == 'Immediate'
-    assert win._generated_edits[paths[0]]['title'] == expected[paths[0]]
+    assert win._per_file_edits[paths[0]]['title'] == expected[paths[0]]
     assert win.file_list.item(rows(win)[paths[0]], 2).text() == expected[paths[0]]
     win._save_metadata_field(paths[0], 'title', 'Later explicit')
-    assert 'title' not in win._generated_edits[paths[0]]
+    assert 'title' not in win._per_file_edits[paths[0]]
     assert win.file_list.item(rows(win)[paths[0]], 2).text() == 'Later explicit'
-    assert win._generated_edits[paths[1]]['title'] == expected[paths[1]]
+    assert win._per_file_edits[paths[1]]['title'] == expected[paths[1]]
 
 
 def test_apply_errors_atomic_and_no_selection(qtbot):
@@ -334,7 +334,7 @@ def test_single_generated_failure_retains_retry_value(setup, monkeypatch, failur
         if failure == 'readback':
             patch.setattr(win, '_read_after_write', fail_read)
         win._save_changes()
-    assert win._unresolved_generated_fields == {path: {'title'}}
+    assert win._unresolved_per_file_fields == {path: {'title'}}
     assert not win._unresolved_single_fields
     # Restoring the cached original must not erase uncertainty.
     win._apply_generated('title', {path: 'Old'})
@@ -352,7 +352,7 @@ def test_generated_refresh_save_discard(setup, monkeypatch, reply):
     monkeypatch.setattr(QMessageBox, 'question', lambda *a: reply)
     win._refresh_tree()
     assert win.current_directory == paths[0].parent
-    assert not win._generated_edits and not win._has_unsaved_changes()
+    assert not win._per_file_edits and not win._has_unsaved_changes()
     assert {p: read_metadata(p).title for p in paths} == (expected if reply == QMessageBox.Save else before)
 
 
@@ -375,12 +375,12 @@ def test_generated_save_uses_accepted_path_order(setup, monkeypatch):
 
 def test_generation_result_validation_is_atomic(setup):
     win, paths = setup
-    before = deepcopy(win._generated_edits)
+    before = deepcopy(win._per_file_edits)
     with pytest.raises(ValueError):
         win._apply_generated('title', {paths[0]: 'Partial'})
     with pytest.raises(ValueError):
         win._apply_generated('track_number', {p: '1' for p in paths})
-    assert win._generated_edits == before and not win._has_unsaved_changes()
+    assert win._per_file_edits == before and not win._has_unsaved_changes()
 
 
 def test_last_generated_difference_saved_immediately_clears_highlight(setup):
@@ -404,7 +404,7 @@ def test_toolbar_dialog_apply(setup, qtbot):
         qtbot.mouseClick(dialog.apply_button, Qt.LeftButton)
     QTimer.singleShot(0, respond)
     next(a for a in win.findChild(QToolBar).actions() if a.text() == 'Generate Text…').trigger()
-    assert win._generated_edits[paths[0]]['title'] == 'Toolbar 01'
+    assert win._per_file_edits[paths[0]]['title'] == 'Toolbar 01'
     assert {p: p.read_bytes() for p in paths} == before
 
 
@@ -413,7 +413,7 @@ def test_panel_only_generated_values_remain_inspectable(setup):
     generated(win, paths, 'genre', '<Genre> ')
     for p, row in rows(win).items():
         tooltip = win.file_list.item(row, 0).toolTip()
-        assert 'Pending generated text' in tooltip and 'Genre: &lt;Genre&gt;' in tooltip
+        assert 'Pending per-file text' in tooltip and 'Genre: &lt;Genre&gt;' in tooltip
     win._save_changes()
     assert all(not win.file_list.item(row, 0).toolTip() for row in rows(win).values())
     assert [read_metadata(p).genre for p in paths] == [f'<Genre> {i:02}' for i in range(1, 4)]

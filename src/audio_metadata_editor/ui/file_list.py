@@ -11,7 +11,7 @@ from PySide6.QtCore import (
     Qt,
     QTimer,
 )
-from PySide6.QtGui import QDesktopServices, QFont
+from PySide6.QtGui import QAction, QDesktopServices, QFont, QKeySequence
 from PySide6.QtWidgets import (
     QHeaderView,
     QLineEdit,
@@ -19,10 +19,14 @@ from PySide6.QtWidgets import (
     QTableWidget,
     QTableWidgetItem,
 )
+from ..editing_rules import copy_target_paths
 from ..metadata.reader import read_metadata
 from ..metadata.errors import MetadataReadError
 
 AUDIO_EXTENSIONS = {".mp3", ".m4b"}
+TABLE_FIELDS = {1: 'track_number', 2: 'title', 3: 'artist', 4: 'album',
+                5: 'series', 6: 'series_number', 7: 'narrator'}
+COPY_TEXT_FIELDS = {column: field for column, field in TABLE_FIELDS.items() if field != 'track_number'}
 
 class FilenameTableWidgetItem(QTableWidgetItem):
     """Keep filename identity and sorting independent of status decoration."""
@@ -177,6 +181,7 @@ class EnterNavigationDelegate(QStyledItemDelegate):
         return super().eventFilter(editor, event)
 
 class FileList(QTableWidget):
+    copy_values_requested = Signal(str, object)
     advance_requested = Signal(str)
     file_selected = Signal(str)
     files_selected = Signal(list)
@@ -229,6 +234,47 @@ class FileList(QTableWidget):
         delegate = EnterNavigationDelegate(self)
         delegate.save_cell_requested.connect(self.save_cell_requested)
         self.setItemDelegate(delegate)
+        self.copy_down_action = QAction("Copy Down", self)
+        self.copy_up_action = QAction("Copy Up", self)
+        for action, shortcut, down in ((self.copy_down_action, "Ctrl+D", True),
+                                       (self.copy_up_action, "Ctrl+Shift+D", False)):
+            action.setShortcut(QKeySequence(shortcut))
+            action.setShortcutContext(Qt.ShortcutContext.WidgetWithChildrenShortcut)
+            action.triggered.connect(lambda checked=False, down=down: self._copy_cells(down))
+            self.addAction(action)
+        self.setContextMenuPolicy(Qt.ContextMenuPolicy.ActionsContextMenu)
+        self.itemSelectionChanged.connect(self._update_copy_actions)
+        self.currentCellChanged.connect(self._update_copy_actions)
+        self.model().layoutChanged.connect(self._update_copy_actions)
+        self._update_copy_actions()
+
+    def _copy_snapshot(self, down):
+        item = self.currentItem()
+        if item is None or item.column() not in COPY_TEXT_FIELDS or not item.flags() & Qt.ItemIsEditable:
+            return None
+        visual = [self.item(row, 0).data(256) for row in range(self.rowCount())
+                  if self.item(row, 0) is not None and self.item(row, 0).data(256)]
+        source = self.item(item.row(), 0).data(256)
+        targets = copy_target_paths(visual, set(self.selected_paths_in_row_order()), source, down=down)
+        if not targets:
+            return None
+        # Read the model's effective display value, never unconfirmed editor text.
+        return COPY_TEXT_FIELDS[item.column()], {path: item.text() for path in targets}
+
+    def _update_copy_actions(self):
+        self.copy_down_action.setEnabled(self._copy_snapshot(True) is not None)
+        self.copy_up_action.setEnabled(self._copy_snapshot(False) is not None)
+
+    def _copy_cells(self, down):
+        snapshot = self._copy_snapshot(down)
+        if snapshot is None:
+            return
+        if self.state() == QTableWidget.State.EditingState:
+            editor = self.indexWidget(self.currentIndex())
+            if editor is not None:
+                self.closeEditor(editor, QStyledItemDelegate.EndEditHint.NoHint)
+        self.copy_values_requested.emit(*snapshot)
+        self._update_copy_actions()
 
     def selectionChanged(self, selected, deselected):
         # Programmatic selection changes need not move keyboard focus, so Qt
@@ -491,8 +537,7 @@ class FileList(QTableWidget):
 
     def show_pending_fields(self, path, values):
         """Overlay scalar presentation without changing file identity or baselines."""
-        columns = {'track_number': 1, 'title': 2, 'artist': 3, 'album': 4,
-                   'series': 5, 'series_number': 6, 'narrator': 7}
+        columns = {field: column for column, field in TABLE_FIELDS.items()}
         item = next((self.item(row, 0) for row in range(self.rowCount())
                      if self.item(row, 0).data(256) == str(path)), None)
         if item is None:
@@ -506,8 +551,9 @@ class FileList(QTableWidget):
                         self.item(item.row(), columns[field]).setText('' if value is None else str(value))
             finally:
                 self.setSortingEnabled(sorting)
+        self._update_copy_actions()
 
-    def set_generated_previews(self, edits):
+    def set_pending_previews(self, edits):
         """Keep panel-only generated values inspectable on their file rows too."""
         for row in range(self.rowCount()):
             item = self.item(row, 0)
@@ -516,7 +562,7 @@ class FileList(QTableWidget):
             values = edits.get(Path(item.data(256)), {})
             preview = '\n'.join(f"{field.replace('_', ' ').title()}: {value}"
                                 for field, value in values.items())
-            item.setToolTip('<pre>' + escape('Pending generated text\n' + preview) + '</pre>'
+            item.setToolTip('<pre>' + escape('Pending per-file text\n' + preview) + '</pre>'
                             if values else '')
 
     def set_dirty_files(self, paths):

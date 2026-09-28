@@ -32,7 +32,7 @@ from .dialogs.generate_text_dialog import GenerateTextDialog, TARGETS
 from .dialogs.paste_fields_dialog import PasteFieldsDialog
 from .folder_navigator import FolderNavigator
 from .. import settings
-from .file_list import FileList
+from .file_list import FileList, TABLE_FIELDS
 from .metadata_panel import MetadataPanel
 from ..metadata import (
     read_metadata,
@@ -68,8 +68,8 @@ class MainWindow(QMainWindow):
         self.current_file = None
         self.selected_files = []
         self._context_index = QPersistentModelIndex()
-        self._generated_edits: dict[Path, dict[str, str]] = {}
-        self._unresolved_generated_fields: dict[Path, set[str]] = {}
+        self._per_file_edits: dict[Path, dict[str, str]] = {}
+        self._unresolved_per_file_fields: dict[Path, set[str]] = {}
         self.multi_edit_fields = set()
         self._multi_field_baselines = {}
         # Unresolved selection-wide intent cannot be dropped by cached comparison.
@@ -145,6 +145,7 @@ class MainWindow(QMainWindow):
 
         # File list
         self.file_list = FileList()
+        self.file_list.copy_values_requested.connect(self._copy_table_values)
         self.file_list.save_cell_requested.connect(
             self._save_table_cell
         )
@@ -225,8 +226,8 @@ class MainWindow(QMainWindow):
         return True
 
     def _clear_editing_context(self):
-        self._generated_edits.clear()
-        self._unresolved_generated_fields.clear()
+        self._per_file_edits.clear()
+        self._unresolved_per_file_fields.clear()
         self._unresolved_single_fields.clear()
         self._unresolved_multi_fields.clear()
         self._unverified_fields.clear()
@@ -377,8 +378,8 @@ class MainWindow(QMainWindow):
         return True
 
     def _load_single_file(self, path, metadata):
-        self._generated_edits.clear()
-        self._unresolved_generated_fields.clear()
+        self._per_file_edits.clear()
+        self._unresolved_per_file_fields.clear()
         self._unresolved_single_fields.clear()
         self._unresolved_multi_fields.clear()
         self._multi_field_baselines.clear()
@@ -407,10 +408,10 @@ class MainWindow(QMainWindow):
                     for field in self.metadata_panel.field_names}
         return {}
 
-    def _generated_changes(self, path):
+    def _per_file_changes(self, path):
         baseline = self._accepted_scalars(path)
-        return {field for field, value in self._generated_edits.get(path, {}).items()
-                if field not in baseline or baseline[field] != value} | self._unresolved_generated_fields.get(path, set())
+        return {field for field, value in self._per_file_edits.get(path, {}).items()
+                if field not in baseline or baseline[field] != value} | self._unresolved_per_file_fields.get(path, set())
 
     def _generate_text(self):
         paths = [Path(path) for path in self.file_list.selected_paths_in_row_order()]
@@ -421,7 +422,7 @@ class MainWindow(QMainWindow):
         for index, path in enumerate(paths, 1):
             accepted = dict(self._accepted_scalars(path))
             for field in (self._unverified_fields.get(path, set())
-                          | self._unresolved_generated_fields.get(path, set())
+                          | self._unresolved_per_file_fields.get(path, set())
                           | self._unresolved_single_fields | self._unresolved_multi_fields):
                 accepted.pop(field, None)
             context = dict(accepted, index=index, filename=path.name,
@@ -443,42 +444,59 @@ class MainWindow(QMainWindow):
         # Validate the complete result before changing any application state.
         if field not in TARGETS or set(values) != {Path(p) for p in self.selected_files} or not all(isinstance(v, str) for v in values.values()):
             raise ValueError("Invalid generated targets")
+        self._apply_per_file_values(field, values)
+
+    def _copy_table_values(self, field, values):
+        self._apply_per_file_values(field, {Path(path): value for path, value in values.items()})
+
+    def _apply_per_file_values(self, field, values):
+        selected = {Path(path) for path in self.selected_files}
+        if not values or field not in TARGETS or not set(values) <= selected or not all(isinstance(value, str) for value in values.values()):
+            return
+        # A subset override splits common intent into equivalent per-file values.
+        # Non-targets retain their prior effective intent, including uncertainty.
+        common_pending = field in self.multi_edit_fields or field in self._unresolved_multi_fields
         common_unresolved = field in self._unresolved_multi_fields or field in self._unresolved_single_fields
+        if common_pending:
+            common_value = getattr(self._get_edited_metadata(), field)
+            for path in selected - values.keys():
+                self._per_file_edits.setdefault(path, {})[field] = common_value
+        if common_unresolved:
+            for path in selected:
+                self._unresolved_per_file_fields.setdefault(path, set()).add(field)
         self.multi_edit_fields.discard(field)
         self._unresolved_multi_fields.discard(field)
         self._unresolved_single_fields.discard(field)
         for path, value in values.items():
-            self._generated_edits.setdefault(path, {})[field] = value
-            if common_unresolved:
-                self._unresolved_generated_fields.setdefault(path, set()).add(field)
-        self._render_generated_edits()
+            self._per_file_edits.setdefault(path, {})[field] = value
+        self._render_per_file_edits()
         self._update_multi_edit_visuals()
 
-    def _render_generated_edits(self):
-        fields = set().union(*(set(values) for values in self._generated_edits.values()))
-        for path, values in self._generated_edits.items():
+    def _render_per_file_edits(self):
+        fields = set().union(*(set(values) for values in self._per_file_edits.values()))
+        for path, values in self._per_file_edits.items():
             self.file_list.show_pending_fields(path, values)
         updates, mixed = {}, set()
         for field in fields:
-            values = [self._generated_edits.get(Path(p), {}).get(field, self._accepted_scalars(Path(p)).get(field))
+            values = [self._per_file_edits.get(Path(p), {}).get(field, self._accepted_scalars(Path(p)).get(field))
                       for p in self.selected_files]
             if values:
                 updates[field] = values[0]
                 if any(value != values[0] for value in values):
                     mixed.add(field)
         self.metadata_panel.set_field_values(updates, mixed_fields=mixed)
-        effective = set().union(*(self._generated_changes(Path(p)) for p in self.selected_files))
+        effective = set().union(*(self._per_file_changes(Path(p)) for p in self.selected_files))
         self.metadata_panel.set_highlighted_fields(self.multi_edit_fields | effective)
 
-    def _supersede_generated(self, field):
-        for path, values in list(self._generated_edits.items()):
+    def _supersede_per_file(self, field):
+        for path, values in list(self._per_file_edits.items()):
             if field not in values:
                 continue
             del values[field]
             if not values:
-                del self._generated_edits[path]
+                del self._per_file_edits[path]
             self.file_list.show_pending_fields(path, {field: self._accepted_scalars(path).get(field)})
-            unresolved = self._unresolved_generated_fields.get(path, set())
+            unresolved = self._unresolved_per_file_fields.get(path, set())
             if field in unresolved:
                 unresolved.remove(field)
                 if len(self.selected_files) > 1:
@@ -486,7 +504,7 @@ class MainWindow(QMainWindow):
                 else:
                     self._unresolved_single_fields.add(field)
             if not unresolved:
-                self._unresolved_generated_fields.pop(path, None)
+                self._unresolved_per_file_fields.pop(path, None)
 
     def _get_edited_metadata(self):
         metadata = self.metadata_panel.collect_metadata()
@@ -514,7 +532,7 @@ class MainWindow(QMainWindow):
 
         # Multi-file editing
         if len(self.selected_files) > 1:
-            if not self.multi_edit_fields and not self.multi_edit_artwork and not any(self._generated_changes(Path(p)) for p in self.selected_files):
+            if not self.multi_edit_fields and not self.multi_edit_artwork and not any(self._per_file_changes(Path(p)) for p in self.selected_files):
                 QMessageBox.information(
                     self,
                     "No Changes",
@@ -541,9 +559,9 @@ class MainWindow(QMainWindow):
                             getattr(edited_metadata, field),
                         )
 
-                    generated = self._generated_edits.get(path, {})
-                    fields = self.multi_edit_fields | self._generated_changes(path)
-                    for field, value in generated.items():
+                    pending = self._per_file_edits.get(path, {})
+                    fields = self.multi_edit_fields | self._per_file_changes(path)
+                    for field, value in pending.items():
                         setattr(metadata, field, value)
                     artwork_options = {}
                     if self.multi_edit_artwork and (
@@ -562,9 +580,9 @@ class MainWindow(QMainWindow):
                     # An attempted write can invalidate the old comparison
                     # baseline even if the write or its readback later fails.
                     baseline = self._multi_field_baselines[path]
-                    generated_fields = fields & generated.keys()
-                    if generated_fields:
-                        self._unresolved_generated_fields.setdefault(path, set()).update(generated_fields)
+                    per_file_fields = fields & pending.keys()
+                    if per_file_fields:
+                        self._unresolved_per_file_fields.setdefault(path, set()).update(per_file_fields)
                     for field in fields:
                         baseline.pop(field, None)
 
@@ -596,7 +614,7 @@ class MainWindow(QMainWindow):
 
             except Exception as exc:
                 self.metadata_panel.set_existing_values(tuple(self._multi_field_baselines.values()))
-                self._render_generated_edits()
+                self._render_per_file_edits()
                 self._update_dirty_indicators()
                 QMessageBox.critical(
                     self,
@@ -614,7 +632,7 @@ class MainWindow(QMainWindow):
                 metadatas = [self._read_after_write(Path(path)) for path in self.selected_files]
             except MetadataReadError as exc:
                 self.metadata_panel.set_existing_values(tuple(self._multi_field_baselines.values()))
-                self._render_generated_edits()
+                self._render_per_file_edits()
                 self._update_dirty_indicators()
                 QMessageBox.critical(
                     self, "Readback Failed",
@@ -660,8 +678,8 @@ class MainWindow(QMainWindow):
         metadata = self._get_edited_metadata()
         changed_fields = changed_scalar_fields(self.current_metadata, metadata)
         changed_fields.update(self._unresolved_single_fields - {"artwork"})
-        generated_fields = set(self._generated_edits.get(self.current_file, {}))
-        changed_fields.update(self._generated_changes(self.current_file))
+        per_file_fields = set(self._per_file_edits.get(self.current_file, {}))
+        changed_fields.update(self._per_file_changes(self.current_file))
         artwork_options = {}
         if (
             "artwork" in self._unresolved_single_fields
@@ -676,9 +694,9 @@ class MainWindow(QMainWindow):
 
         # A writer can modify the file and then raise. Stale baseline equality
         # must not discard any attempted logical field, even on writer failure.
-        self._unresolved_single_fields.update(changed_fields - generated_fields)
-        if changed_fields & generated_fields:
-            self._unresolved_generated_fields.setdefault(self.current_file, set()).update(changed_fields & generated_fields)
+        self._unresolved_single_fields.update(changed_fields - per_file_fields)
+        if changed_fields & per_file_fields:
+            self._unresolved_per_file_fields.setdefault(self.current_file, set()).update(changed_fields & per_file_fields)
         if artwork_options:
             self._unresolved_single_fields.add("artwork")
 
@@ -732,8 +750,8 @@ class MainWindow(QMainWindow):
         self._unresolved_single_fields.difference_update(changed_fields)
         if artwork_options:
             self._unresolved_single_fields.discard("artwork")
-        self._generated_edits.clear()
-        self._unresolved_generated_fields.clear()
+        self._per_file_edits.clear()
+        self._unresolved_per_file_fields.clear()
         self._update_multi_edit_visuals()
 
         QMessageBox.information(
@@ -743,7 +761,7 @@ class MainWindow(QMainWindow):
         )
 
     def _has_unsaved_changes(self):
-        if any(self._generated_changes(Path(path)) for path in self.selected_files):
+        if any(self._per_file_changes(Path(path)) for path in self.selected_files):
             return True
         if self.selected_files and self._numeric_errors():
             return True
@@ -782,8 +800,8 @@ class MainWindow(QMainWindow):
             QMessageBox.critical(self, "Undo Failed", str(exc))
             return
 
-        self._generated_edits.clear()
-        self._unresolved_generated_fields.clear()
+        self._per_file_edits.clear()
+        self._unresolved_per_file_fields.clear()
         for path in self.selected_files:
             self._unverified_fields.pop(Path(path), None)
         if len(self.selected_files) > 1:
@@ -956,8 +974,8 @@ class MainWindow(QMainWindow):
         return None, False
 
     def _show_common_metadata(self, metadatas):
-        self._generated_edits.clear()
-        self._unresolved_generated_fields.clear()
+        self._per_file_edits.clear()
+        self._unresolved_per_file_fields.clear()
         # Only called with successfully loaded metadata for an accepted context.
         self._unresolved_single_fields.clear()
         self._unresolved_multi_fields.clear()
@@ -1005,7 +1023,7 @@ class MainWindow(QMainWindow):
         self.metadata_panel.values_changed.connect(self._update_multi_edit_visuals)
 
     def _metadata_field_edited(self, field):
-        self._supersede_generated(field)
+        self._supersede_per_file(field)
         if len(self.selected_files) > 1:
             self.multi_edit_fields.add(field)
             self._update_multi_edit_visuals()
@@ -1024,11 +1042,11 @@ class MainWindow(QMainWindow):
             )
             self.multi_edit_fields.clear()
             self.multi_edit_fields.update(effective)
-        generated_fields = set().union(*(self._generated_changes(Path(p)) for p in self.selected_files))
-        self.metadata_panel.set_highlighted_fields(self.multi_edit_fields | generated_fields)
+        per_file_fields = set().union(*(self._per_file_changes(Path(p)) for p in self.selected_files))
+        self.metadata_panel.set_highlighted_fields(self.multi_edit_fields | per_file_fields)
 
         if len(self.selected_files) > 1:
-            field_count = len(self.multi_edit_fields | generated_fields)
+            field_count = len(self.multi_edit_fields | per_file_fields)
 
             if self.multi_edit_artwork:
                 field_count += 1
@@ -1195,7 +1213,7 @@ class MainWindow(QMainWindow):
             selected_fields.remove("artwork")
 
         for field in selected_fields:
-            self._supersede_generated(field)
+            self._supersede_per_file(field)
         if len(self.selected_files) > 1:
             self.multi_edit_fields.update(selected_fields)
 
@@ -1216,7 +1234,7 @@ class MainWindow(QMainWindow):
                 metadata,
             )
 
-        self._render_generated_edits()
+        self._render_per_file_edits()
         self._update_multi_edit_visuals()
 
     def _show_pasted_metadata(self, selected_fields):
@@ -1317,26 +1335,16 @@ class MainWindow(QMainWindow):
         elif self.current_file is not None and self._has_unsaved_changes():
             dirty_paths = [self.current_file]
 
-        dirty_paths.extend(path for path in self.selected_files if self._generated_changes(Path(path)))
+        dirty_paths.extend(path for path in self.selected_files if self._per_file_changes(Path(path)))
         dirty_paths.extend(self._unverified_fields)
         self.file_list.set_dirty_files(dirty_paths)
-        self.file_list.set_generated_previews(self._generated_edits)
+        self.file_list.set_pending_previews(self._per_file_edits)
 
     def _save_table_cell(self, path_string, column, value):
         self.file_list.cell_save_succeeded = False
         path = Path(path_string)
 
-        fields = {
-            1: "track_number",
-            2: "title",
-            3: "artist",
-            4: "album",
-            5: "series",
-            6: "series_number",
-            7: "narrator",
-        }
-
-        field = fields.get(column)
+        field = TABLE_FIELDS.get(column)
         if field is None:
             return
 
@@ -1359,7 +1367,7 @@ class MainWindow(QMainWindow):
                 self.file_list.update_file_metadata(path, disk_metadata)
             except Exception:
                 pass
-            self._render_generated_edits()
+            self._render_per_file_edits()
 
     def _verify_field_saves(self, paths=None):
         """Accept disk truth for immediate writes, without replaying them.
@@ -1373,7 +1381,7 @@ class MainWindow(QMainWindow):
         if verified and len(self.selected_files) > 1:
             metadatas = [self._read_after_write(Path(path)) for path in self.selected_files]
             fields = set().union(*(self._unverified_fields[path] for path in verified))
-            for field in fields - self.multi_edit_fields - set().union(*(set(v) for v in self._generated_edits.values())):
+            for field in fields - self.multi_edit_fields - set().union(*(set(v) for v in self._per_file_edits.values())):
                 value, common = self._common_metadata_value(metadatas, field)
                 common_updates[field] = value
                 if not common:
@@ -1387,7 +1395,7 @@ class MainWindow(QMainWindow):
                 edited = self._get_edited_metadata()
                 unchanged = {
                     field for field in fields - self._invalid_numeric_fields()
-                    - self._unresolved_single_fields - set(self._generated_edits.get(path, {}))
+                    - self._unresolved_single_fields - set(self._per_file_edits.get(path, {}))
                     if getattr(edited, field) == getattr(self.current_metadata, field)
                 }
                 for field in fields:
@@ -1401,7 +1409,7 @@ class MainWindow(QMainWindow):
         if verified:
             self.metadata_panel.set_existing_values(tuple(self._multi_field_baselines.values()))
             self.metadata_panel.set_field_values(common_updates, mixed_fields=mixed_fields)
-            self._render_generated_edits()
+            self._render_per_file_edits()
             self._update_dirty_indicators()
 
         return verified
@@ -1466,10 +1474,10 @@ class MainWindow(QMainWindow):
             if len(self.selected_files) == 1:
                 self.metadata_panel.set_field_values({field: saved_value})
                 self._unresolved_single_fields.discard(field)
-        self._generated_edits.get(path, {}).pop(field, None)
-        self._unresolved_generated_fields.get(path, set()).discard(field)
+        self._per_file_edits.get(path, {}).pop(field, None)
+        self._unresolved_per_file_fields.get(path, set()).discard(field)
         self.file_list.update_file_metadata(path, metadata)
-        self._render_generated_edits()
+        self._render_per_file_edits()
         self._update_dirty_indicators()
 
     def _auto_number_tracks(self):

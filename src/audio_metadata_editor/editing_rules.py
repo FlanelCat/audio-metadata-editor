@@ -53,3 +53,13 @@ def effective_multi_fields(
                for baseline in baselines)
     }
     return effective - restored
+
+
+def copy_target_paths(visual_paths: Sequence[str], selected_paths: Set[str],
+                      source_path: str, *, down: bool) -> tuple[str, ...]:
+    """Selected targets strictly on one visual side of the source, in row order."""
+    if source_path not in visual_paths:
+        return ()
+    source = visual_paths.index(source_path)
+    side = visual_paths[source + 1:] if down else visual_paths[:source]
+    return tuple(path for path in side if path in selected_paths)

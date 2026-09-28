@@ -319,3 +319,10 @@ Refresh-context regressions in `test_folder_navigator.py` cover root/book/editio
 Run these with editing rules, initial multi-selection, dropdowns, effective dirty, panel uncertainty, immediate writer failures, Auto-number, Paste, directory transitions, FolderNavigator/Refresh, sorted loading, Filename sorting and Enter identity, then the full offscreen suite and `git diff --check`.
 
 `tests/ui/test_generate_text_settings.py` uses the existing per-test isolated QSettings store to cover first-use defaults, successful Apply persistence, same-window reopening, restoration through a new MainWindow/settings instance, Cancel and invalid Apply protection, stale-target fallback, invalid stored-template preview and preservation of an explicitly empty template. Existing Generate Text tests retain pending/save behavior coverage.
+
+
+### Copy Down / Copy Up regressions
+
+`tests/unit/test_editing_rules.py` tests pure visual-order target selection, discontinuous selections, both directions, absent sources and no targets. `tests/ui/test_copy_cells.py` uses temporary MP3/M4B copies for actions/shortcuts, middle sources, effective/repeated copying, clean matching targets, common/mixed presentation, unsupported columns, transient editors, ascending/descending metadata sorting and stable paths. It covers Generate/common-edit precedence, retained unrelated fields, Save and artwork/pair preservation, writer/readback failures and retry, uncertainty transfer, failed/successful Discard, navigation/Refresh/close Cancel and subsequent immediate Enter-save.
+
+Run Copy tests with Generate Text and remembered settings, editing rules, dirty/uncertainty, table Enter/identity, sorted loading/Filename sorting, FolderNavigator, directory transitions, Auto-number and Paste regressions, followed by the full offscreen suite and `git diff --check`. Generate tests use the shared neutral `_per_file_edits` / `_unresolved_per_file_fields` state names.

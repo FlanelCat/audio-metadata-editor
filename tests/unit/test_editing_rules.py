@@ -143,3 +143,20 @@ def test_effective_fields_for_target(baseline, edited, intended, expected):
     assert result == expected
     result.clear()
     assert (baseline, edited, intended) == before
+
+
+@pytest.mark.parametrize('visual,selected,source,down,expected', [
+    (['a', 'b', 'c', 'd', 'e'], {'a', 'c', 'e'}, 'c', True, ('e',)),
+    (['a', 'b', 'c', 'd', 'e'], {'a', 'c', 'e'}, 'c', False, ('a',)),
+    (['c', 'b', 'a'], {'a', 'b', 'c'}, 'b', True, ('a',)),
+    (['c', 'b', 'a'], {'a', 'b', 'c'}, 'b', False, ('c',)),
+    (['a', 'b'], {'a', 'b'}, 'b', True, ()),
+    (['a', 'b'], {'a', 'b'}, 'a', False, ()),
+    (['a', 'b'], {'b'}, 'a', True, ('b',)),
+    (['a'], {'a'}, 'missing', True, ()),
+])
+def test_copy_targets(visual, selected, source, down, expected):
+    from audio_metadata_editor.editing_rules import copy_target_paths
+    before = deepcopy((visual, selected))
+    assert copy_target_paths(visual, selected, source, down=down) == expected
+    assert (visual, selected) == before

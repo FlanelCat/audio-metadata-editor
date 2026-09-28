@@ -39,7 +39,7 @@ def test_first_use_apply_reopen_and_restart(make_window, monkeypatch):
     win._generate_text()
     assert win.settings.value(settings.GENERATE_TEXT_FIELD_KEY) == 'series'
     assert win.settings.value(settings.GENERATE_TEXT_TEMPLATE_KEY) == 'Series {index:03}'
-    assert win._generated_edits[Path('/virtual/book.mp3')] == {'series': 'Series 001'}
+    assert win._per_file_edits[Path('/virtual/book.mp3')] == {'series': 'Series 001'}
     def reopen(dialog):
         assert dialog.field.currentData() == 'series'
         assert dialog.template.text() == 'Series {index:03}'
@@ -56,7 +56,7 @@ def test_cancel_or_invalid_apply_does_not_replace_settings(make_window, monkeypa
     win = make_window()
     win.settings.setValue(settings.GENERATE_TEXT_FIELD_KEY, 'title')
     win.settings.setValue(settings.GENERATE_TEXT_TEMPLATE_KEY, 'Saved {track:02}')
-    before = deepcopy(win._generated_edits)
+    before = deepcopy(win._per_file_edits)
     def cancel(dialog):
         dialog.field.setCurrentIndex(dialog.field.findData('series'))
         dialog.template.setText('{unknown}' if invalid else '{album}')
@@ -70,7 +70,7 @@ def test_cancel_or_invalid_apply_does_not_replace_settings(make_window, monkeypa
     win._generate_text()
     assert win.settings.value(settings.GENERATE_TEXT_FIELD_KEY) == 'title'
     assert win.settings.value(settings.GENERATE_TEXT_TEMPLATE_KEY) == 'Saved {track:02}'
-    assert win._generated_edits == before
+    assert win._per_file_edits == before
 
 
 @pytest.mark.parametrize('template', ['Restored {index}', '{obsolete}', ''])
