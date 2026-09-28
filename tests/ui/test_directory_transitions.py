@@ -197,7 +197,7 @@ def test_ctrl_click_deselects_last_row(setup, qtbot, monkeypatch, reply):
 
 
 @pytest.mark.parametrize('reply', [QMessageBox.Discard, QMessageBox.Cancel])
-def test_refresh_from_child_returns_to_root_only_when_accepted(setup, monkeypatch, reply):
+def test_refresh_from_child_retains_directory_and_tree_selection(setup, monkeypatch, reply):
     win, a, b = setup
     child = a / 'child'
     child.mkdir()
@@ -208,11 +208,11 @@ def test_refresh_from_child_returns_to_root_only_when_accepted(setup, monkeypatc
     previous_item = win.directory_tree.currentItem()
     monkeypatch.setattr(QMessageBox, 'question', lambda *args: reply)
     win._refresh_tree()
-    expected = child if reply == QMessageBox.Cancel else a
+    expected = child
     assert Path(win.file_list.item(0, 0).data(256)).parent == expected
     assert win.status_label.text() == str(expected)
+    assert win.directory_tree.currentItem() is previous_item
     if reply == QMessageBox.Cancel:
-        assert win.directory_tree.currentItem() is previous_item
         assert win.artist_edit.text() == 'Pending'
     else:
         assert_empty(win)

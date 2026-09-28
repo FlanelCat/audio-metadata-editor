@@ -184,7 +184,10 @@ def test_restart_open_folder_and_refresh(window, library, tmp_path, monkeypatch,
     assert window.directory_tree.currentItem() is None
     assert window.settings.value(settings.ROOT_KEY) == str(library)
     window._refresh_tree()
-    assert window.current_directory == library
+    assert window.current_directory == other
+    assert window.directory_tree.currentItem() is None
+    assert window.root_path == library
+    assert window.settings.value(settings.ROOT_KEY) == str(library)
     restored = MainWindow()
     qtbot.addWidget(restored)
     assert restored.root_path == library and restored.current_directory == library
@@ -344,3 +347,94 @@ def test_root_failed_save_restores_old_context(window, library, tmp_path, monkey
     assert window.artist_edit.text() == 'Pending'
     assert window._unresolved_single_fields == {'artist'}
     assert window.settings.value(settings.ROOT_KEY) == str(library)
+
+
+@pytest.mark.parametrize('context', ['root', 'book', 'edition'])
+def test_refresh_keeps_accepted_tree_context(window, library, monkeypatch, context):
+    choose_root(window, library, monkeypatch)
+    books = window.directory_tree.topLevelItem(0)
+    book = child(books, 'Book')
+    book.setExpanded(True)
+    edition = child(book, 'Edition A')
+    item = {'root': books, 'book': book, 'edition': edition}[context]
+    path = Path(item.data(0, 256))
+    assert window._directory_selected(path)
+    requests = []
+    window.directory_tree.directory_requested.connect(requests.append)
+    window._refresh_tree()
+    assert window.current_directory == path
+    assert window.directory_tree.topLevelItem(0) is books
+    assert window.directory_tree.currentItem() is item
+    assert books.isExpanded() and book.isExpanded()
+    assert not requests
+    assert all(p.parent == path for p in table_paths(window))
+    assert window.settings.value(settings.ROOT_KEY) == str(library)
+
+
+def test_refresh_rereads_current_files(window, library, monkeypatch, audio_fixture_dir):
+    from audio_metadata_editor.metadata import Metadata
+    from audio_metadata_editor.metadata.writer import write_metadata
+    choose_root(window, library, monkeypatch)
+    directory = library / 'Book/Edition A'
+    window._directory_selected(directory)
+    removed = directory / 'part.m4b'
+    removed.unlink()  # Temporary fixture copy only.
+    added = directory / 'new.m4b'
+    shutil.copy2(audio_fixture_dir / 'silence.m4b', added)
+    existing = directory / 'part.mp3'
+    write_metadata(existing, Metadata(title='External change'), fields={'title'})
+    window._refresh_tree()
+    assert window.current_directory == directory
+    assert table_paths(window) == {existing, added}
+    row = next(r for r in range(window.file_list.rowCount())
+               if window.file_list.item(r, 0).data(256) == str(existing))
+    assert window.file_list.item(row, 2).text() == 'External change'
+
+
+@pytest.mark.parametrize('reply', [QMessageBox.Save, QMessageBox.Discard, QMessageBox.Cancel])
+def test_refresh_nested_pending_guard(window, library, monkeypatch, qtbot, reply):
+    choose_root(window, library, monkeypatch)
+    book = child(window.directory_tree.topLevelItem(0), 'Book')
+    book.setExpanded(True)
+    edition = child(book, 'Edition A')
+    directory = Path(edition.data(0, 256))
+    window._directory_selected(directory)
+    path = directory / 'part.mp3'
+    window.file_list.select_files([str(path)])
+    qtbot.keyClicks(window.artist_edit, 'Pending')
+    monkeypatch.setattr(QMessageBox, 'question', lambda *a: reply)
+    original = window.file_list.item(0, 0)
+    window._refresh_tree()
+    assert window.current_directory == directory
+    assert window.directory_tree.currentItem() is edition and book.isExpanded()
+    assert table_paths(window) == {directory / f'part.{s}' for s in ('mp3', 'm4b')}
+    if reply == QMessageBox.Cancel:
+        assert window.file_list.item(0, 0) is original
+        assert window.artist_edit.text() == 'Pending' and window._has_unsaved_changes()
+    else:
+        assert not window._has_unsaved_changes() and not window.selected_files
+    assert read_metadata(path).artist == ('Pending' if reply == QMessageBox.Save else '')
+
+
+def test_refresh_invalid_and_missing_directory(window, library, monkeypatch, qtbot):
+    choose_root(window, library, monkeypatch)
+    book = child(window.directory_tree.topLevelItem(0), 'Book')
+    book.setExpanded(True)
+    edition = child(book, 'Edition A')
+    directory = Path(edition.data(0, 256))
+    window._directory_selected(directory)
+    window.file_list.select_files([str(directory / 'part.mp3')])
+    qtbot.keyClicks(window.track_edit, 'invalid')
+    monkeypatch.setattr(QMessageBox, 'question', lambda *a: QMessageBox.Save)
+    warnings = []
+    monkeypatch.setattr(QMessageBox, 'warning', lambda *a: warnings.append(a))
+    window._refresh_tree()
+    assert warnings and window.track_edit.text() == 'invalid'
+    assert window.current_directory == directory and window.directory_tree.currentItem() is edition
+    before = table_paths(window)
+    directory.rename(directory.with_name('temporarily unavailable'))
+    window._refresh_tree()
+    assert window.current_directory == directory and window.directory_tree.currentItem() is edition
+    assert table_paths(window) == before and window.track_edit.text() == 'invalid'
+    assert str(directory) in window.statusBar().currentMessage()
+    assert window.root_path == library

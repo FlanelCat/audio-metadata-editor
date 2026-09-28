@@ -346,9 +346,7 @@ class MainWindow(QMainWindow):
         return True
 
     def _refresh_tree(self):
-        if self.root_path is not None:
-            self._populate_root()
-        elif self.current_directory is not None:
+        if self.current_directory is not None:
             self._directory_selected(self.current_directory)
 
     def _show_metadata(self, metadata):
