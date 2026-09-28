@@ -14,7 +14,8 @@ TARGETS = {
 class GenerateTextDialog(QDialog):
     """Preview immutable accepted contexts; expose values only after Apply."""
 
-    def __init__(self, targets, parent=None):
+    def __init__(self, targets, parent=None, *, initial_field='title',
+                 initial_template='Chapter {track:02}'):
         super().__init__(parent)
         self.targets = tuple((path, dict(context)) for path, context in targets)
         self.generated = None
@@ -24,7 +25,8 @@ class GenerateTextDialog(QDialog):
         self.field = QComboBox()
         for name, label in TARGETS.items():
             self.field.addItem(label, name)
-        self.template = QLineEdit('Chapter {track:02}')
+        self.field.setCurrentIndex(self.field.findData(initial_field if initial_field in TARGETS else 'title'))
+        self.template = QLineEdit(initial_template)
         layout.addRow('Field', self.field)
         layout.addRow('Template', self.template)
         help_text = QLabel('Variables: index, track, disc, title, artist, album, album_artist, narrator, '

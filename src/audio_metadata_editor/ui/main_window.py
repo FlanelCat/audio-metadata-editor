@@ -427,9 +427,17 @@ class MainWindow(QMainWindow):
             context = dict(accepted, index=index, filename=path.name,
                            track=accepted.get('track_number'), disc=accepted.get('disc_number'))
             targets.append((path, context))
-        dialog = GenerateTextDialog(targets, self)
+        dialog = GenerateTextDialog(
+            targets, self,
+            initial_field=self.settings.value(settings.GENERATE_TEXT_FIELD_KEY, 'title', type=str),
+            initial_template=self.settings.value(
+                settings.GENERATE_TEXT_TEMPLATE_KEY, 'Chapter {track:02}', type=str),
+        )
         if dialog.exec() == QDialog.DialogCode.Accepted and dialog.generated is not None:
             self._apply_generated(*dialog.generated)
+            self.settings.setValue(settings.GENERATE_TEXT_FIELD_KEY, dialog.generated[0])
+            self.settings.setValue(settings.GENERATE_TEXT_TEMPLATE_KEY, dialog.template.text())
+            self.settings.sync()
 
     def _apply_generated(self, field, values):
         # Validate the complete result before changing any application state.
