@@ -296,3 +296,14 @@ Before production changes, the initial 18 cases produced 16 failures and two pas
 Per-file row-marker regressions in `test_existing_values.py` cover existing/missing/blank values, typed/dropdown equivalence, multiple-field unions and restoration, direct multi-selection, Cancel/Discard/new contexts, successful and uncertain saves, and artwork/immediate-verification unions. Marker assertions use file identity in a filename-sorted table, including clearing after Save. `test_editing_rules.py` directly covers per-target scalar comparisons and missing baselines without Qt.
 
 `tests/ui/test_filename_sorting.py` covers ascending/descending filename stability through per-file dropdown/typed edits, Empty, multiple fields, Discard, Save, Refresh and all three uncertainty marker sources. It checks path/title identity and directly tests the filename comparator, including case folding, different parent directories and literal asterisks in filenames. Sorted-loading and Enter-editor identity suites remain required regression coverage.
+
+
+## Filesystem navigator
+
+`tests/ui/test_folder_navigator.py` adds 23 cases for no-root/root presentation, synthetic Books, direct-only MP3/M4B loading, filesystem identity, keyboard and mouse navigation, guarded Save/Discard/Cancel, invalid numeric input, all three uncertainty states, root switching/failure, isolated persistence across windows, missing/unreadable remembered roots, Open Folder and Refresh. Enumeration spies prove that root setup never scans children and expansion scans only the expanded directory. Additional cases cover hidden/symlink omission, arbitrary nesting and case-insensitive ordering, atomic partial-enumeration failure/retry, and directory disappearance between preflight and loading. Existing DirectoryTree tests now expect Books and rejection of an unreadable root.
+
+The autouse `isolated_settings` fixture replaces the application settings factory with a distinct temporary INI file for every test. Tests never read or overwrite developer/user application settings. Mutable MP3/M4B test inputs remain copies of the tracked fixture masters.
+
+Run navigator tests alongside directory transitions, selection synchronization, effective dirty, dropdowns, sorted loading, Filename sorting, Enter-editor identity, immediate writer failure and single/multi uncertainty suites, then the full offscreen suite and `git diff --check`.
+
+Manual checks: choose a real root and inspect its basename/full path; expand/collapse nested book/edition folders; select an edition and verify direct audio files; select its parent and verify no recursive aggregation; cancel navigation with pending edits and verify the old node is restored; save and navigate; restart and verify remembered-root restoration; temporarily make the root unavailable and verify no-root presentation without forgetting it; confirm Open Folder still opens an arbitrary directory without changing the remembered root.

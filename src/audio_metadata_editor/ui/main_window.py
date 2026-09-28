@@ -29,7 +29,8 @@ from ..editing_rules import changed_scalar_fields, effective_multi_fields, effec
 from ..metadata.writer import write_metadata
 from .dialogs.auto_number_dialog import AutoNumberDialog
 from .dialogs.paste_fields_dialog import PasteFieldsDialog
-from .directory_tree import DirectoryTree
+from .folder_navigator import FolderNavigator
+from .. import settings
 from .file_list import FileList
 from .metadata_panel import MetadataPanel
 from ..metadata import (
@@ -60,6 +61,8 @@ class MainWindow(QMainWindow):
         self.setWindowTitle("Audio Metadata Editor")
         self.resize(1200, 700)
 
+        self.settings = settings.create_settings()
+        self.current_directory = None
         self.root_path = None
         self.current_file = None
         self.selected_files = []
@@ -86,6 +89,10 @@ class MainWindow(QMainWindow):
         self._create_main_layout()
         self._create_status_bar()
         self._create_shortcuts()
+        remembered = self.settings.value(settings.ROOT_KEY, "", type=str)
+        if remembered:
+            self._install_root(Path(remembered))
+
 
     def _create_toolbar(self):
         toolbar = QToolBar("Main Toolbar")
@@ -124,10 +131,13 @@ class MainWindow(QMainWindow):
         splitter = QSplitter()
 
         # Directory tree
-        self.directory_tree = DirectoryTree()
+        self.folder_navigator = FolderNavigator()
+        self.directory_tree = self.folder_navigator.tree
         self.directory_tree.directory_requested.connect(self._directory_selected)
+        self.directory_tree.enumeration_failed.connect(self.statusBar().showMessage)
+        self.folder_navigator.choose_root_requested.connect(self._choose_root)
 
-        splitter.addWidget(self.directory_tree)
+        splitter.addWidget(self.folder_navigator)
 
         # File list
         self.file_list = FileList()
@@ -276,53 +286,70 @@ class MainWindow(QMainWindow):
         self.statusBar().addPermanentWidget(self.status_label)
 
     def _open_folder(self):
-        directory = QFileDialog.getExistingDirectory(
-            self,
-            "Select Audiobook Folder",
-        )
+        directory = QFileDialog.getExistingDirectory(self, "Select Audiobook Folder")
+        if directory:
+            self._directory_selected(directory)
 
-        if not directory:
-            return
+    def _choose_root(self):
+        directory = QFileDialog.getExistingDirectory(self, "Choose Audiobook Root")
+        if directory and self._install_root(Path(directory)):
+            self.settings.setValue(settings.ROOT_KEY, str(self.root_path))
+            self.settings.sync()
 
-        if not self._guard_selection_change():
-            return
-
-        self.root_path = Path(directory)
-
-        self._populate_root()
-
-        self.status_label.setText(str(self.root_path))
+    def _install_root(self, path):
+        path = path.absolute()
+        try:
+            directories = self.directory_tree.child_directories(path)
+        except OSError as exc:
+            self.statusBar().showMessage(f"Cannot list {path}: {exc}")
+            return False
+        if not self._directory_selected(path):
+            return False
+        self.root_path = path
+        self.folder_navigator.set_root(path, directories)
+        return True
 
     def _populate_root(self):
-        if not self._guard_selection_change():
-            return
-        self.directory_tree.set_root(self.root_path)
-        self._directory_selected(self.root_path)
+        if self.root_path is not None:
+            return self._install_root(self.root_path)
+        return False
 
     def _directory_selected(self, path):
         if not path:
-            return
-
+            return False
+        directory = Path(path)
+        try:
+            self.file_list.directory_files(directory)
+        except OSError as exc:
+            self.directory_tree.restore_current_directory()
+            self.statusBar().showMessage(f"Cannot list {directory}: {exc}")
+            return False
         if not self._guard_selection_change():
             self.directory_tree.restore_current_directory()
-            return
-
-        directory = Path(path)
-        # Guard before destroying rows; intermediate selection signals cannot
-        # restore rows once the model is being cleared.
+            return False
+        # Recheck enumeration after the guard before replacing rows. Metadata is
+        # read after Save/Discard, so shared files reflect any completed writes.
         with QSignalBlocker(self.file_list):
             errors = self.file_list.load_directory(directory)
+        if errors is None:
+            self.directory_tree.restore_current_directory()
+            self.statusBar().showMessage(f"Cannot list {directory}: {self.file_list.directory_error}")
+            return False
         self._clear_editing_context()
+        self.current_directory = directory
         self.directory_tree.set_current_directory(directory)
         self.status_label.setText(str(directory))
         if errors:
             QMessageBox.critical(
                 self, "Read Failed", "Skipped unreadable files:\n\n" + "\n".join(map(str, errors))
             )
+        return True
 
     def _refresh_tree(self):
         if self.root_path is not None:
             self._populate_root()
+        elif self.current_directory is not None:
+            self._directory_selected(self.current_directory)
 
     def _show_metadata(self, metadata):
         self.metadata_panel.set_metadata(metadata)

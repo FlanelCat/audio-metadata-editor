@@ -238,7 +238,22 @@ class FileList(QTableWidget):
                 self.closeEditor(editor, QStyledItemDelegate.EndEditHint.NoHint)
         super().selectionChanged(selected, deselected)
 
+    @staticmethod
+    def directory_files(directory: Path):
+        return sorted(
+            (entry for entry in directory.iterdir()
+             if entry.is_file() and entry.suffix.lower() in AUDIO_EXTENSIONS),
+            key=lambda entry: entry.name.lower(),
+        )
+
     def load_directory(self, directory: Path):
+        # Enumeration failure must leave the previous rows and selection intact.
+        self.directory_error = None
+        try:
+            files = self.directory_files(directory)
+        except OSError as exc:
+            self.directory_error = exc
+            return None
         sorting = self.isSortingEnabled()
         header = self.horizontalHeader()
         sort_column = header.sortIndicatorSection()
@@ -250,19 +265,6 @@ class FileList(QTableWidget):
             self.setRowCount(0)
             # Qt may retain old content widths when the model becomes empty.
             self.resizeColumnsToContents()
-
-            try:
-                files = sorted(
-                    (
-                        entry
-                        for entry in directory.iterdir()
-                        if entry.is_file()
-                        and entry.suffix.lower() in AUDIO_EXTENSIONS
-                    ),
-                    key=lambda entry: entry.name.lower(),
-                )
-            except OSError:
-                return
 
             errors = []
             for file_path in files:

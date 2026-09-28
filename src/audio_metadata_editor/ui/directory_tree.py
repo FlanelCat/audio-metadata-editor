@@ -1,107 +1,100 @@
 from pathlib import Path
 
-from PySide6.QtCore import QSignalBlocker, Signal
+from PySide6.QtCore import QSignalBlocker, Signal, Qt
 from PySide6.QtWidgets import QTreeWidget, QTreeWidgetItem, QTreeWidgetItemIterator
 
 
 class DirectoryTree(QTreeWidget):
-    """Directory presentation and requests; the caller decides navigation policy."""
+    """Lazy directory presentation; the caller decides navigation policy."""
 
     directory_requested = Signal(str)
+    enumeration_failed = Signal(str)
 
     def __init__(self, parent=None):
         super().__init__(parent)
         self._accepted_item = None
         self.setHeaderLabel("Folders")
+        self.setHeaderHidden(True)
         self.itemExpanded.connect(self._populate_directory)
         self.itemClicked.connect(self._request_directory)
 
-    def set_root(self, path):
-        """Rebuild and select a root without requesting navigation."""
+    @staticmethod
+    def child_directories(path):
+        """Enumerate only this level, omitting hidden and symlink directories."""
+        return sorted(
+            (entry for entry in Path(path).iterdir()
+             if not entry.name.startswith('.') and not entry.is_symlink() and entry.is_dir()),
+            key=lambda entry: (entry.name.casefold(), entry.name),
+        )
+
+    def set_root(self, path, directories=None):
+        """Rebuild an already readable root without requesting navigation."""
         path = Path(path)
-        self._accepted_item = None
-        self.clear()
-        root_item = QTreeWidgetItem([path.name or str(path)])
-        root_item.setData(0, 256, str(path))
-        self.addTopLevelItem(root_item)
-        self._add_placeholder(root_item)
-        root_item.setExpanded(True)
-        self.setCurrentItem(root_item)
-        root_item.setSelected(True)
+        if directories is None:
+            try:
+                directories = self.child_directories(path)
+            except OSError as exc:
+                self.enumeration_failed.emit(f"Cannot list {path}: {exc}")
+                return False
+        with QSignalBlocker(self):
+            self._accepted_item = None
+            self.clear()
+            root = QTreeWidgetItem(["Books"])
+            root.setData(0, 256, str(path))
+            self.addTopLevelItem(root)
+            self._install_children(root, directories)
+            root.setExpanded(True)
+            self.setCurrentItem(root)
+            self._accepted_item = root
+        return True
 
     def set_current_directory(self, path):
-        """Remember an accepted, displayed directory without requesting navigation."""
-        path = str(path)
+        """Accept a displayed directory, or clear selection for an outside folder."""
+        self._accepted_item = None
         iterator = QTreeWidgetItemIterator(self)
         while iterator.value() is not None:
             item = iterator.value()
-            if item.data(0, 256) == path:
+            if item.data(0, 256) == str(path):
                 self._accepted_item = item
-                with QSignalBlocker(self):
-                    self.setCurrentItem(item)
-                return
+                break
             iterator += 1
+        self.restore_current_directory()
 
     def restore_current_directory(self):
-        """Restore presentation after the caller rejects a directory request."""
-        if self._accepted_item is not None:
-            with QSignalBlocker(self):
-                self.setCurrentItem(self._accepted_item)
+        with QSignalBlocker(self):
+            self.clearSelection()
+            self.setCurrentItem(self._accepted_item)
 
     def _request_directory(self, item, column):
         path = item.data(0, 256)
         if path:
             self.directory_requested.emit(path)
 
-    def _populate_directory(self, item):
-        path = Path(item.data(0, 256))
+    def keyPressEvent(self, event):
+        previous = self.currentItem()
+        super().keyPressEvent(event)
+        item = self.currentItem()
+        if item is not None and (item is not previous or event.key() in (Qt.Key_Return, Qt.Key_Enter)):
+            self._request_directory(item, 0)
 
-        if not path.is_dir():
-            return
-
-        # Remove the placeholder item.
-        while item.childCount():
-            child = item.takeChild(0)
-
-            if child.data(0, 256) is not None:
-                item.addChild(child)
-                break
-
-        # Don't repopulate an already populated directory.
-        if item.childCount() > 0:
-            return
-
-        try:
-            directories = sorted(
-                (
-                    entry
-                    for entry in path.iterdir()
-                    if entry.is_dir() and not entry.name.startswith(".")
-                ),
-                key=lambda entry: entry.name.lower(),
-            )
-        except OSError:
-            return
-
+    def _install_children(self, item, directories):
+        item.takeChildren()
         for directory in directories:
             child = QTreeWidgetItem([directory.name])
             child.setData(0, 256, str(directory))
-
-            if self._contains_directory(directory):
-                self._add_placeholder(child)
-
+            # Show an expansion affordance without probing this child's contents.
+            child.addChild(QTreeWidgetItem([""]))
             item.addChild(child)
+        item.setData(0, 257, True)
 
-    def _add_placeholder(self, item):
-        placeholder = QTreeWidgetItem([""])
-        item.addChild(placeholder)
-
-    def _contains_directory(self, path):
+    def _populate_directory(self, item):
+        if item.data(0, 257):
+            return
+        path = Path(item.data(0, 256))
         try:
-            return any(
-                entry.is_dir() and not entry.name.startswith(".")
-                for entry in path.iterdir()
-            )
-        except OSError:
-            return False
-
+            directories = self.child_directories(path)
+        except OSError as exc:
+            # Keep the placeholder and unloaded state so collapse/expand retries.
+            self.enumeration_failed.emit(f"Cannot list {path}: {exc}")
+            return
+        self._install_children(item, directories)

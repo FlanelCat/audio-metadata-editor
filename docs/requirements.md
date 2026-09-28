@@ -306,3 +306,16 @@ After a successful center-table Enter-save, advancing to the next row selects th
 Center-table text remains transient until Enter requests the immediate save. Abandoning its editor through focus loss, another cell/selection, Tab, Escape, directory navigation, Refresh or close discards that text and retains accepted table presentation. Qt's automatic editor commits must not make it appear saved or turn it into pending metadata-panel edits. Existing guards still protect unrelated panel edits.
 
 Directory changes, Open Folder, and Refresh protect pending panel edits with the same Save / Discard / Cancel guard before replacing rows or rebuilding the tree. Failed Save and Cancel retain the old directory, selection and pending presentation. Refresh retains its existing behavior of rebuilding the tree and reloading the root directory without restoring file selection. Accepted reloads and clearing the table selection clear the file editing target, baseline, panel values, artwork, intent and dirty indicators; clipboard metadata remains available. A populated table with no selected row has no active metadata-panel target.
+
+
+### Filesystem folder navigator
+
+The left panel is a read-only filesystem navigator, not a library index. It shows the chosen root's basename prominently and its full path below, with a **Choose Root…** button. A synthetic **Books** node represents that root; its children are the root's direct subdirectories. Directory names have no author, book, year, edition or narrator parsing semantics. Audio and other files are never tree nodes.
+
+Directory discovery is lazy: setup enumerates only the root level, and expansion enumerates only that node's direct children. Siblings use case-insensitive filename ordering. Dot-directories and symlinked child directories are omitted; no recursive symlink traversal or filesystem modification is provided. Failed expansion reports a status message, installs no partial children and can be retried by collapsing and expanding.
+
+Selecting Books loads files directly inside the root. Selecting another folder loads only its direct audio files through FileList; it never aggregates descendants. Tree navigation and root changes reuse the existing Save / Discard / Cancel guard, including invalid numeric input and all persistence-uncertainty states. Cancel or failed navigation restores the accepted tree selection and retains the accepted table context. Directory enumeration is checked before prompting and again before replacing rows, so an unavailable destination does not destroy the old table.
+
+Choose Root installs and remembers only a successfully accepted root using QSettings. Startup restores a readable remembered root and loads its direct files. A missing or unreadable remembered root leaves a clear “No audiobook root selected” state, keeps Choose Root available and retains the setting for a temporarily unavailable mount. There is no fallback directory, database or metadata cache.
+
+Open Folder remains available for arbitrary directories and does not redefine or persist the navigator root. If its directory has no displayed tree node, the tree selection is cleared. Refresh retains the guarded return-to-root behavior when a root exists; without a root it reloads the directory opened through Open Folder. No file selection is restored.

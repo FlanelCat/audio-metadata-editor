@@ -22,7 +22,7 @@ def test_root_and_lazy_expansion(tree, tmp_path):
     tree.set_root(tmp_path)
     root = tree.topLevelItem(0)
     assert tree.headerItem().text(0) == 'Folders'
-    assert root.text(0) == tmp_path.name
+    assert root.text(0) == "Books"
     assert root.data(0, 256) == str(tmp_path)
     assert root.isExpanded()
     assert tree.currentItem() is root
@@ -88,5 +88,8 @@ def test_unreadable_directory(tree, tmp_path, monkeypatch):
     def fail(path):
         raise PermissionError('unreadable')
     monkeypatch.setattr(Path, 'iterdir', fail)
-    tree.set_root(tmp_path)
-    assert tree.topLevelItem(0).childCount() == 0
+    errors = []
+    tree.enumeration_failed.connect(errors.append)
+    assert not tree.set_root(tmp_path)
+    assert tree.topLevelItemCount() == 0
+    assert errors and 'unreadable' in errors[0]
