@@ -346,3 +346,6 @@ Run Copy tests with Generate Text and remembered settings, editing rules, dirty/
 ### MP3 Comment identities
 
 `tests/integration/test_mp3_comments.py` reproduces described-comment resurrection and covers canonical change/clear, uneditable described/non-English values, reversed frame ordering, language selection, bidirectional ID3v1 Comment isolation, v2.3/v2.4, legacy TSIZ, artwork, pairs, custom TXXX and untagged creation. The initial eight cases failed before production changes. `tests/ui/test_comment_save.py` covers single/multi panel change/clear for both fields and readback-failure retry. Field-isolation/full-write expectations now protect non-English ordinary frames rather than treating them as requested edits. No raw unknown-frame preservation guarantee is added.
+
+
+`tests/ui/test_artwork_read_errors.py` covers disappearance after selection, permission errors on open, I/O errors during read, and chooser cancellation. Single/multi selections with accepted artwork, pending replacement or pending removal retain their complete editing state, preview and disk bytes; writer spies verify no metadata writes. Existing Paste/artwork and panel-preservation tests retain successful selection and explicit-save coverage.

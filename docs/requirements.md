@@ -128,6 +128,8 @@ Remove Artwork is a no-op for files with no saved artwork. It cancels a pending 
 
 Editing unrelated metadata must not rewrite or remove artwork.
 
+If opening or reading a selected artwork file fails, report the path and error without changing accepted artwork, pending replacement/removal intent, preview, dirty state or unrelated pending edits. No metadata is written. Cancelling the chooser remains a no-op.
+
 Future versions may provide artwork replacement and management functionality.
 
 ## 10. File List

@@ -938,8 +938,15 @@ class MainWindow(QMainWindow):
         if not path:
             return
 
-        with open(path, "rb") as file:
-            artwork = file.read()
+        try:
+            with open(path, "rb") as file:
+                artwork = file.read()
+        except OSError as exc:
+            QMessageBox.critical(
+                self, "Artwork Read Failed",
+                f"Could not read the selected artwork file:\n{path}\n\n{exc}",
+            )
+            return
 
         image = QImage.fromData(artwork)
 
