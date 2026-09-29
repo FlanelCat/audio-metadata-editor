@@ -3,6 +3,7 @@ from pathlib import Path
 from mutagen.mp4 import MP4, MP4Cover
 from mutagen.mp4 import AtomDataType
 
+from .date import normalize_date
 from .model import Metadata
 from .errors import MetadataReadError
 
@@ -129,6 +130,7 @@ def write_m4b_metadata(
 
     Omitting artwork preserves it, including during field-specific writes.
     """
+    date = normalize_date(metadata.date) if fields is None or "date" in fields else None
     audio = MP4(path)
 
     if audio.tags is None:
@@ -161,7 +163,7 @@ def write_m4b_metadata(
     if fields is None or "genre" in fields:
         set_text("\xa9gen", metadata.genre)
     if fields is None or "date" in fields:
-        set_text("\xa9day", metadata.date)
+        set_text("\xa9day", date)
     if fields is None or "composer" in fields:
         set_text("\xa9wrt", metadata.composer)
     if fields is None or "comment" in fields:

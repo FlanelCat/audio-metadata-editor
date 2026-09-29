@@ -26,7 +26,8 @@ from PySide6.QtWidgets import (
 )
 
 from ..editing_rules import changed_scalar_fields, effective_multi_fields, effective_fields_for_target
-from ..metadata.writer import write_metadata
+from ..metadata.writer import write_metadata, validate_date_for_file
+from ..metadata.date import verify_date, DateVerificationError
 from .dialogs.auto_number_dialog import AutoNumberDialog
 from .dialogs.generate_text_dialog import GenerateTextDialog, TARGETS
 from .dialogs.paste_fields_dialog import PasteFieldsDialog
@@ -512,6 +513,18 @@ class MainWindow(QMainWindow):
         metadata.artwork_mime = self.pending_artwork_mime
         return metadata
 
+    def _pending_dates(self):
+        """Only validate Date when this save intends to write it."""
+        edited = self._get_edited_metadata()
+        if len(self.selected_files) == 1:
+            if (edited.date != self.current_metadata.date or 'date' in self._unresolved_single_fields
+                    or 'date' in self._per_file_changes(self.current_file)):
+                return {self.current_file: edited.date}
+            return {}
+        return {Path(p): self._per_file_edits.get(Path(p), {}).get('date', edited.date)
+                for p in self.selected_files
+                if 'date' in self.multi_edit_fields or 'date' in self._per_file_changes(Path(p))}
+
     def _save_changes(self):
         # Retry verification without rewriting a field that may already be saved.
         try:
@@ -528,6 +541,15 @@ class MainWindow(QMainWindow):
                 "No Files Selected",
                 "No files are selected.",
             )
+            return
+
+        date_intent = self._pending_dates()
+        try:
+            for path, value in date_intent.items():
+                validate_date_for_file(path, value)
+        except Exception as exc:
+            QMessageBox.warning(self, "Invalid Date", f"Cannot save Date for {path.name}: {exc}")
+            self.metadata_panel.focus_date_field()
             return
 
         # Multi-file editing
@@ -602,6 +624,8 @@ class MainWindow(QMainWindow):
                         )
 
                     metadata = self._read_after_write(path)
+                    if path in date_intent:
+                        verify_date(date_intent[path], metadata.date)
                     verified_writes += 1
                     for field in fields:
                         baseline[field] = getattr(metadata, field)
@@ -630,7 +654,10 @@ class MainWindow(QMainWindow):
 
             try:
                 metadatas = [self._read_after_write(Path(path)) for path in self.selected_files]
-            except MetadataReadError as exc:
+                for path, metadata in zip(self.selected_files, metadatas):
+                    if Path(path) in date_intent:
+                        verify_date(date_intent[Path(path)], metadata.date)
+            except (MetadataReadError, DateVerificationError) as exc:
                 self.metadata_panel.set_existing_values(tuple(self._multi_field_baselines.values()))
                 self._render_per_file_edits()
                 self._update_dirty_indicators()
@@ -725,6 +752,8 @@ class MainWindow(QMainWindow):
                 )
 
             metadata = self._read_after_write(self.current_file)
+            if self.current_file in date_intent:
+                verify_date(date_intent[self.current_file], metadata.date)
 
         except Exception as exc:
             QMessageBox.critical(

@@ -144,6 +144,11 @@ class MetadataPanel(QWidget):
         widget.setFocus()
         widget.selectAll()
 
+    def focus_date_field(self):
+        """Select the attempted Date after a validation warning."""
+        self.date_edit.setFocus()
+        self.date_edit.selectAll()
+
     def set_id3v1_comment_enabled(self, enabled):
         """Apply the caller's ID3v1 Comment availability decision."""
         self.id3v1_comment_edit.setEnabled(enabled)
