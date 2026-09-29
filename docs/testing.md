@@ -349,3 +349,8 @@ Run Copy tests with Generate Text and remembered settings, editing rules, dirty/
 
 
 `tests/ui/test_artwork_read_errors.py` covers disappearance after selection, permission errors on open, I/O errors during read, and chooser cancellation. Single/multi selections with accepted artwork, pending replacement or pending removal retain their complete editing state, preview and disk bytes; writer spies verify no metadata writes. Existing Paste/artwork and panel-preservation tests retain successful selection and explicit-save coverage.
+
+
+### Simulated keyboard modifiers
+
+The Ctrl-click deselection test in `test_directory_transitions.py` uses an explicit Control key press and a `finally` key release around the modified mouse click. Supplying ControlModifier to QTest.mouseClick alone left Qt's global keyboard state reporting Ctrl held, causing ten subsequent sorted-loading selection cases to extend selection. Keep modifier gestures balanced even when an interaction/assertion raises; do not mask state by patching keyboardModifiers or changing production behavior. Two regression cases verify normal/exception cleanup and selection replacement in a subsequent independent widget. Run directory transitions followed by sorted loading, also in reverse order, alongside selection/editor/navigation tests.

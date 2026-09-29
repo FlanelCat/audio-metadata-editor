@@ -172,6 +172,17 @@ def test_saved_artwork_cleared_on_directory_change(setup):
     assert read_metadata(path).artwork == bytes(buffer.data())
 
 
+def ctrl_click(qtbot, widget, position):
+    from PySide6.QtCore import Qt
+    # A QTest mouse modifier annotates events but does not release that key.
+    # Model the complete gesture, even when the click/assertions raise.
+    try:
+        qtbot.keyPress(widget, Qt.Key_Control)
+        qtbot.mouseClick(widget, Qt.LeftButton, Qt.ControlModifier, position)
+    finally:
+        qtbot.keyRelease(widget, Qt.Key_Control)
+
+
 @pytest.mark.parametrize('reply', [QMessageBox.Discard, QMessageBox.Cancel])
 def test_ctrl_click_deselects_last_row(setup, qtbot, monkeypatch, reply):
     from PySide6.QtCore import Qt
@@ -182,8 +193,10 @@ def test_ctrl_click_deselects_last_row(setup, qtbot, monkeypatch, reply):
     prompts = []
     monkeypatch.setattr(QMessageBox, 'question', lambda *args: prompts.append(args) or reply)
     table = win.file_list
-    qtbot.mouseClick(table.viewport(), Qt.LeftButton, Qt.ControlModifier,
-                     table.visualItemRect(table.item(0, 0)).center())
+    ctrl_click(qtbot, table.viewport(),
+               table.visualItemRect(table.item(0, 0)).center())
+    from PySide6.QtWidgets import QApplication
+    assert QApplication.keyboardModifiers() == Qt.NoModifier
     assert len(prompts) == 1
     if reply == QMessageBox.Cancel:
         assert table.selected_paths_in_row_order() == original
@@ -257,3 +270,31 @@ def test_tree_synchronization_preserves_pending_context(setup, monkeypatch):
     assert win.artist_edit.text() == 'Pending'
     assert win._has_unsaved_changes()
     assert win.file_list.item(0, 0).text().startswith('*')
+
+
+@pytest.mark.parametrize('raises', [False, True])
+def test_ctrl_click_releases_modifier_before_next_interaction(qtbot, monkeypatch, raises):
+    from PySide6.QtCore import QPoint, Qt
+    from PySide6.QtWidgets import QApplication, QWidget, QTableWidget, QAbstractItemView
+    widget = QWidget()
+    qtbot.addWidget(widget)
+    widget.show()
+    if raises:
+        mouse_click = qtbot.mouseClick
+        def failed_click(*args):
+            mouse_click(*args)
+            assert QApplication.keyboardModifiers() == Qt.ControlModifier
+            raise AssertionError('simulated failed interaction')
+        monkeypatch.setattr(qtbot, 'mouseClick', failed_click)
+        with pytest.raises(AssertionError, match='simulated failed interaction'):
+            ctrl_click(qtbot, widget, QPoint(1, 1))
+    else:
+        ctrl_click(qtbot, widget, QPoint(1, 1))
+    assert QApplication.keyboardModifiers() == Qt.NoModifier
+    # A subsequent independent widget must replace, rather than extend, selection.
+    table = QTableWidget(2, 1)
+    qtbot.addWidget(table)
+    table.setSelectionMode(QAbstractItemView.ExtendedSelection)
+    table.setCurrentCell(0, 0)
+    table.setCurrentCell(1, 0)
+    assert [index.row() for index in table.selectedIndexes()] == [1]
