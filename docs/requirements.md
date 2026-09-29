@@ -349,3 +349,10 @@ Save Changes uses the existing field-specific write/readback path, preserving un
 ### MP3 tag-version preservation
 
 MP3 writes preserve an existing ID3v2.3 or ID3v2.4 major version, including full writes. Field-specific edits preserve unrelated Mutagen-supported frames valid for that version, including v2.3-only frames such as TSIZ, custom TXXX values, comments, artwork and unrequested Track/Disc components. Full writes retain their existing supported-field replacement semantics. This is semantic preservation, not byte-identical tag serialization; Mutagen may change encoding/padding. Existing multi-valued v2.3 text is retained using null separators rather than merged with slashes (a nonstandard v2.3 convention). Arbitrary malformed, unparsed or incompatible frames have no blanket preservation guarantee. Older tag versions retain the existing upgrade behavior; creating tags on untagged MP3s remains unsupported.
+
+
+### Date values
+
+Date writes accept ASCII ISO-style YYYY, YYYY-MM, YYYY-MM-DD, and full dates with HH, HH:MM or HH:MM:SS. Timestamp separators may be T or one space. Leading/trailing whitespace is stripped; whitespace-only means explicit removal. Calendar dates/times must be possible (years 0001–9999); timezone offsets, Z, fractions, leap seconds and other syntax are rejected. Canonical text uses a space; seconds :00 are equivalent to minute precision. ID3v2.3 supports only year, full date and minute timestamps (including equivalent :00 seconds); month-only, hour-only and nonzero seconds are rejected with a file-specific explanation rather than truncated. ID3v2.4 and M4B accept all these forms.
+
+Save validates all intended target Dates before any batch write. Invalid attempts remain raw/pending/dirty, with a warning and Date focus/selection; Cancel preserves them and Discard reloads disk truth. Unedited legacy Date text does not block unrelated writes. Date readback must be semantically equivalent before success clears intent. Mismatches retain existing panel/per-file retry uncertainty without rollback. Date is not a center-table column, so Enter-save and Copy Up/Down cannot currently target Date.

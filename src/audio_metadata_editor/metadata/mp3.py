@@ -18,9 +18,11 @@ from mutagen.id3 import (
     TPUB,
     TRCK,
     TPOS,
+    TIME,
     TXXX,
 )
 
+from .date import normalize_date
 from .model import Metadata
 from .errors import MetadataReadError
 
@@ -151,6 +153,8 @@ def write_mp3_metadata(
     if version == 4:
         tags.update_to_v24()
 
+    date = normalize_date(metadata.date, id3_version=version) if fields is None or "date" in fields else None
+
     def set_text(frame_id: str, frame_class, value: str) -> None:
         tags.delall(frame_id)
 
@@ -178,7 +182,7 @@ def write_mp3_metadata(
             # Mutagen otherwise gives existing TYER/TDAT/TIME precedence.
             for frame_id in ("TYER", "TDAT", "TIME"):
                 tags.delall(frame_id)
-        set_text("TDRC", TDRC, metadata.date)
+        set_text("TDRC", TDRC, date)
     if fields is None or "composer" in fields:
         set_text("TCOM", TCOM, metadata.composer)
     if fields is None or "copyright" in fields:
@@ -298,5 +302,8 @@ def write_mp3_metadata(
 
     if version == 3:
         tags.update_to_v23()
+        # Mutagen's conversion omits TIME when either component is zero.
+        if date and len(date) == 16:
+            tags.setall("TIME", [TIME(encoding=3, text=[date[11:13] + date[14:16]])])
     # Retain any existing multi-valued text rather than joining it with '/'.
     tags.save(path, v2_version=version, v23_sep=None)
