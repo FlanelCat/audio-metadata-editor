@@ -100,14 +100,3 @@ def test_explicit_artwork_retains_version(tagged):
         assert ID3(path, translate=False).version == (2, version, 0)
         assert read_metadata(path).artwork == cover
         assert read_metadata(path).title == 'Original'
-
-
-def test_untagged_write_remains_unsupported(tmp_path, audio_fixture_dir):
-    from mutagen.id3 import delete, ID3NoHeaderError
-    path = tmp_path / 'untagged.mp3'
-    shutil.copy2(audio_fixture_dir / 'silence.mp3', path)
-    delete(path)
-    before = path.read_bytes()
-    with pytest.raises(ID3NoHeaderError):
-        write_mp3_metadata(path, Metadata(title='New'), fields={'title'})
-    assert path.read_bytes() == before

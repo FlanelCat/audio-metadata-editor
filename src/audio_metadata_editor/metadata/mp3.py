@@ -133,6 +133,17 @@ def read_mp3_metadata(path: Path) -> Metadata:
         raise MetadataReadError(path, exc) from exc
 
 
+def load_mp3_tags_for_write(path: Path):
+    """Return existing tags, or new in-memory v2.4 tags after MPEG validation."""
+    try:
+        return ID3(path, translate=False), False
+    except ID3NoHeaderError:
+        # A missing header alone is not proof of audio. Match the reader's
+        # validation policy before allowing an explicit write to create tags.
+        MP3(path)
+        return ID3(), True
+
+
 def write_mp3_metadata(
     path: Path,
     metadata: Metadata,
@@ -148,7 +159,7 @@ def write_mp3_metadata(
     # Default translation drops v2.3-only frames before we can preserve them.
     # Keep the loaded version for both filtered and full writes; never migrate
     # unrelated metadata merely to edit a supported logical field.
-    tags = ID3(path, translate=False)
+    tags, new_tag = load_mp3_tags_for_write(path)
     version = 3 if tags.version[:2] == (2, 3) else 4
     if version == 4:
         tags.update_to_v24()
@@ -305,5 +316,7 @@ def write_mp3_metadata(
         # Mutagen's conversion omits TIME when either component is zero.
         if date and len(date) == 16:
             tags.setall("TIME", [TIME(encoding=3, text=[date[11:13] + date[14:16]])])
+    if new_tag and not tags:
+        return
     # Retain any existing multi-valued text rather than joining it with '/'.
     tags.save(path, v2_version=version, v23_sep=None)
