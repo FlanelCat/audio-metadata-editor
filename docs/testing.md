@@ -354,3 +354,8 @@ Run Copy tests with Generate Text and remembered settings, editing rules, dirty/
 ### Simulated keyboard modifiers
 
 The Ctrl-click deselection test in `test_directory_transitions.py` uses an explicit Control key press and a `finally` key release around the modified mouse click. Supplying ControlModifier to QTest.mouseClick alone left Qt's global keyboard state reporting Ctrl held, causing ten subsequent sorted-loading selection cases to extend selection. Keep modifier gestures balanced even when an interaction/assertion raises; do not mask state by patching keyboardModifiers or changing production behavior. Two regression cases verify normal/exception cleanup and selection replacement in a subsequent independent widget. Run directory transitions followed by sorted loading, also in reverse order, alongside selection/editor/navigation tests.
+
+
+### Scrollable metadata panel
+
+`tests/ui/test_metadata_scrolling.py` exercises real 1024×600 and 1200×650 windows: vertical scrolling, bottom-field Tab/focus visibility, numeric/Date focus, absence of horizontal scrolling at these widths, artwork selection/removal/Undo, pending text and explicit Save. Existing MetadataPanel control/order/alias tests remain, with the splitter assertion updated to account for the scroll container.

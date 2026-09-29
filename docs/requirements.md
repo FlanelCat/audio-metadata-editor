@@ -363,3 +363,8 @@ Save validates all intended target Dates before any batch write. Invalid attempt
 ### MP3 Comment identities
 
 MP3 ordinary Comment is exclusively COMM with empty description and language eng. Other languages and nonempty descriptions remain unrelated metadata: they are preserved and no longer surfaced as editable ordinary Comment. Changing Comment replaces the canonical frame; clearing removes it without falling back to another frame. The existing ID3v1 Comment logical field remains the complete COMM category with description exactly ID3v1 Comment, across languages (not direct editing of a raw ID3v1 trailer). Reading that category prefers the first nonempty English value, then language-code order; explicitly editing it retains the existing replacement convention of one English frame, and clearing removes that category. Ordinary and ID3v1 Comment writes remain isolated. No language/description selector is added.
+
+
+### Scrollable metadata panel
+
+The metadata panel scrolls vertically at smaller window heights, keeping the complete field order and artwork controls accessible without resizing. Tab traversal and programmatic validation focus reveal the focused control automatically. The navigator and file table remain separate splitter panes; scrolling does not change pending edits or save behavior.

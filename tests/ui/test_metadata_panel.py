@@ -74,7 +74,7 @@ def test_main_window_uses_panel_controls(qtbot):
     window = MainWindow()
     qtbot.addWidget(window)
     panel = window.metadata_panel
-    assert window.centralWidget().widget(2) is panel
+    assert window.centralWidget().widget(2).widget() is panel
     for name, _ in FIELDS:
         assert getattr(window, name) is getattr(panel, name)
     for name in ('artwork_label', 'choose_artwork_button', 'remove_artwork_button'):

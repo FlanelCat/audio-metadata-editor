@@ -619,3 +619,8 @@ The MP3 writer loads with `ID3(..., translate=False)` to avoid default v2.4 tran
 ### MP3 Comment identities
 
 The MP3 `_comment_field` helper is shared by reading and writer filtering. Canonical ordinary Comment uses (description="", language="eng"); no fallback is allowed because fallback would resurrect unrelated values after clear. The legacy description-wide ID3v1 Comment category keeps its existing write semantics; its reader now selects deterministically, preferring nonempty English then language-code order. Other COMM frames are outside editable identities and survive, including empty-description non-English comments. This policy uses existing Save/readback/uncertainty handling without introducing Comment state.
+
+
+### Scrollable metadata panel
+
+MainWindow wraps the existing MetadataPanel in a widget-resizable QScrollArea within the right splitter pane. MetadataPanel retains its controls, ownership and API. A focus-change handler scoped to panel descendants calls ensureWidgetVisible, including programmatic validation focus; other panes and persistence are unchanged.

@@ -13,6 +13,7 @@ from PySide6.QtGui import (
     QShortcut,
 )
 from PySide6.QtWidgets import (
+    QApplication,
     QDialog,
     QFileDialog,
     QLabel,
@@ -22,6 +23,7 @@ from PySide6.QtWidgets import (
     QPlainTextEdit,
     QPushButton,
     QSplitter,
+    QScrollArea,
     QToolBar,
 )
 
@@ -187,12 +189,22 @@ class MainWindow(QMainWindow):
         self.choose_artwork_button.clicked.connect(self._choose_artwork)
         self.remove_artwork_button.clicked.connect(self._remove_artwork)
 
-        splitter.addWidget(self.metadata_panel)
+        self.metadata_scroll = metadata_scroll = QScrollArea()
+        metadata_scroll.setWidgetResizable(True)
+        metadata_scroll.setFrameShape(QScrollArea.NoFrame)
+        metadata_scroll.setWidget(self.metadata_panel)
+        splitter.addWidget(metadata_scroll)
+        QApplication.instance().focusChanged.connect(self._reveal_metadata_focus)
 
         splitter.setSizes([250, 600, 350])
 
         self.setCentralWidget(splitter)
         self._connect_multi_edit_tracking()
+
+    def _reveal_metadata_focus(self, previous, current):
+        # Include programmatic validation focus, not only Tab traversal.
+        if current is not None and self.metadata_panel.isAncestorOf(current):
+            self.metadata_scroll.ensureWidgetVisible(current)
 
     def _files_selected(self, paths):
         if set(paths) == set(self.selected_files):
