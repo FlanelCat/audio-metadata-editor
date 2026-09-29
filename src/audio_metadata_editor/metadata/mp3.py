@@ -143,7 +143,13 @@ def write_mp3_metadata(
 
     Omitting artwork preserves it, including during field-specific writes.
     """
-    tags = ID3(path)
+    # Default translation drops v2.3-only frames before we can preserve them.
+    # Keep the loaded version for both filtered and full writes; never migrate
+    # unrelated metadata merely to edit a supported logical field.
+    tags = ID3(path, translate=False)
+    version = 3 if tags.version[:2] == (2, 3) else 4
+    if version == 4:
+        tags.update_to_v24()
 
     def set_text(frame_id: str, frame_class, value: str) -> None:
         tags.delall(frame_id)
@@ -167,6 +173,11 @@ def write_mp3_metadata(
     if fields is None or "genre" in fields:
         set_text("TCON", TCON, metadata.genre)
     if fields is None or "date" in fields:
+        if version == 3:
+            # Replace the old date components before converting the new TDRC;
+            # Mutagen otherwise gives existing TYER/TDAT/TIME precedence.
+            for frame_id in ("TYER", "TDAT", "TIME"):
+                tags.delall(frame_id)
         set_text("TDRC", TDRC, metadata.date)
     if fields is None or "composer" in fields:
         set_text("TCOM", TCOM, metadata.composer)
@@ -285,5 +296,7 @@ def write_mp3_metadata(
                 )
             )
 
-    tags.save(path)
-
+    if version == 3:
+        tags.update_to_v23()
+    # Retain any existing multi-valued text rather than joining it with '/'.
+    tags.save(path, v2_version=version, v23_sep=None)
