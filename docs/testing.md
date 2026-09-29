@@ -341,3 +341,8 @@ Run Copy tests with Generate Text and remembered settings, editing rules, dirty/
 ### Untagged MP3 writes
 
 `tests/integration/test_untagged_mp3.py` removes ID3 from temporary public fixture copies, verifies empty reads are non-mutating, and exercises isolated fields, artwork, full writes, empty/removal no-ops, Date rejection, corrupt/disguised inputs and save failure. New tags are v2.4; MPEG properties and the complete original payload after the new header remain unchanged. The initial Title regression failed with ID3NoHeaderError before the fix. `tests/ui/test_untagged_save.py` covers selection, panel/Enter/artwork/generated/Date saves, invalid Date pending state, and write-then-raise/readback failure with retry. The former B1 test asserting untagged writes were unsupported was replaced by this explicit feature coverage; B1/B2 regressions remain required.
+
+
+### MP3 Comment identities
+
+`tests/integration/test_mp3_comments.py` reproduces described-comment resurrection and covers canonical change/clear, uneditable described/non-English values, reversed frame ordering, language selection, bidirectional ID3v1 Comment isolation, v2.3/v2.4, legacy TSIZ, artwork, pairs, custom TXXX and untagged creation. The initial eight cases failed before production changes. `tests/ui/test_comment_save.py` covers single/multi panel change/clear for both fields and readback-failure retry. Field-isolation/full-write expectations now protect non-English ordinary frames rather than treating them as requested edits. No raw unknown-frame preservation guarantee is added.

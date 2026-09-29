@@ -71,6 +71,19 @@ def _get_pair(tags, frame_id: str) -> tuple[int | None, int | None]:
     return number, total
 
 
+def _comment_field(frame):
+    """Only English undescribed COMM is ordinary Comment; never fall back.
+
+    Keep the existing description-wide ID3v1 Comment convention (not a raw
+    ID3v1 trailer editor). Other languages/descriptions are unrelated metadata.
+    """
+    if frame.desc == "ID3v1 Comment":
+        return "id3v1_comment"
+    if frame.desc == "" and frame.lang == "eng":
+        return "comment"
+    return None
+
+
 def _get_artwork(tags) -> tuple[bytes | None, str]:
     for frame in tags.values():
         if isinstance(frame, APIC):
@@ -95,16 +108,16 @@ def read_mp3_metadata(path: Path) -> Metadata:
         comment = ""
         id3v1_comment = ""
 
-        for frame in tags.getall("COMM"):
+        # The legacy description-wide category prefers English, then language
+        # code order, independent of physical frame ordering.
+        for frame in sorted(tags.getall("COMM"), key=lambda f: (f.lang != "eng", f.lang)):
             if not frame.text:
                 continue
-
-            text = str(frame.text[0])
-
-            if frame.desc == "ID3v1 Comment":
-                id3v1_comment = text
-            elif not comment:
-                comment = text
+            field = _comment_field(frame)
+            if field == "id3v1_comment" and not id3v1_comment:
+                id3v1_comment = str(frame.text[0])
+            elif field == "comment":
+                comment = str(frame.text[0])
 
         return Metadata(
             title=_get_text(tags, "TIT2"),
@@ -240,11 +253,13 @@ def write_mp3_metadata(
             for field, description in (("comment", ""), ("id3v1_comment", "ID3v1 Comment"))
             if fields is None or field in fields
         }
-        # Keep unrequested categories, including their languages and values.
+        requested_fields = {field for field in ("comment", "id3v1_comment")
+                            if fields is None or field in fields}
+        # Use exactly the reader's identities; never consume unrelated comments.
         remaining_comments = [
             frame
             for frame in comments
-            if frame.desc not in requested_descriptions
+            if _comment_field(frame) not in requested_fields
         ]
 
         tags.setall("COMM", remaining_comments)

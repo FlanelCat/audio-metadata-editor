@@ -614,3 +614,8 @@ The MP3 writer loads with `ID3(..., translate=False)` to avoid default v2.4 tran
 
 
 `load_mp3_tags_for_write` shares writer and Date-preflight loading: existing ID3 loads without translation; only ID3NoHeaderError triggers MPEG validation using MP3(path), matching the reader policy. Successful validation permits an empty in-memory ID3v2.4 tag (the natural current representation), with disk creation deferred to explicit save. An empty new tag is not saved. Other read/parse failures propagate; tag creation and writes retain the existing post-write verification and uncertainty handling. This validates MPEG structure through Mutagen, not exhaustive audio decoding.
+
+
+### MP3 Comment identities
+
+The MP3 `_comment_field` helper is shared by reading and writer filtering. Canonical ordinary Comment uses (description="", language="eng"); no fallback is allowed because fallback would resurrect unrelated values after clear. The legacy description-wide ID3v1 Comment category keeps its existing write semantics; its reader now selects deterministically, preferring nonempty English then language-code order. Other COMM frames are outside editable identities and survive, including empty-description non-English comments. This policy uses existing Save/readback/uncertainty handling without introducing Comment state.

@@ -58,18 +58,18 @@ def test_comment_category_isolation(tmp_path, field, description, value, audio_f
         for lang in ('eng', 'swe'):
             tags.add(COMM(encoding=1, lang=lang, desc=desc, text=[desc + lang, 'Second value']))
     tags.save(path)
-    before = {k: f for k, f in ID3(path).items() if isinstance(f, COMM) and f.desc != description}
+    before = {k: f for k, f in ID3(path).items() if isinstance(f, COMM) and (f.desc != description or (field == "comment" and f.lang != "eng"))}
     pending = Metadata(comment='Must not leak', id3v1_comment='Must not leak')
     setattr(pending, field, value)
     write_mp3_metadata(path, pending, fields={field})
     comments = ID3(path).getall('COMM')
-    after = {f.HashKey: f for f in comments if f.desc != description}
+    after = {f.HashKey: f for f in comments if (f.desc != description or (field == "comment" and f.lang != "eng"))}
     assert after.keys() == before.keys()
     for key in before:
         assert after[key].text == before[key].text
         assert after[key].encoding == before[key].encoding
         assert after[key].lang == before[key].lang
-    changed = [f for f in comments if f.desc == description]
+    changed = [f for f in comments if f.desc == description and (field != "comment" or f.lang == "eng")]
     assert [f.text for f in changed] == ([[value]] if value else [])
 
 
@@ -83,8 +83,9 @@ def test_full_write_comments(tmp_path, audio_fixture_dir):
     write_mp3_metadata(path, Metadata(comment='New'), fields=None)
     comments = {f.desc: f for f in ID3(path).getall('COMM')}
     assert set(comments) == {'', 'Unrelated'}
-    assert comments[''].text == ['New']
-    assert comments[''].lang == 'eng'
+    ordinary = {f.lang: f for f in ID3(path).getall('COMM') if f.desc == ''}
+    assert ordinary['eng'].text == ['New']
+    assert ordinary['swe'].text == ['Original']
     assert comments['Unrelated'].text == ['Original']
 
 
