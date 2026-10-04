@@ -7,7 +7,6 @@ from PySide6.QtCore import (
     QPersistentModelIndex,
 )
 from PySide6.QtGui import (
-    QImage,
     QKeySequence,
     QPixmap,
     QShortcut,
@@ -37,6 +36,7 @@ from .folder_navigator import FolderNavigator
 from .. import settings
 from .file_list import FileList, TABLE_FIELDS
 from .metadata_panel import MetadataPanel
+from .artwork import decode_artwork
 from ..metadata import (
     read_metadata,
     MetadataReadError,
@@ -929,8 +929,9 @@ class MainWindow(QMainWindow):
         """Render artwork bytes, or clear the preview for absent/invalid artwork."""
         self.artwork_label.clear()
         if artwork:
-            image = QImage.fromData(artwork)
-            if not image.isNull():
+            decoded = decode_artwork(artwork)
+            if decoded is not None:
+                image, _ = decoded
                 self.artwork_label.setPixmap(
                     QPixmap.fromImage(image).scaled(
                         self.artwork_label.size(),
@@ -960,23 +961,20 @@ class MainWindow(QMainWindow):
             )
             return
 
-        image = QImage.fromData(artwork)
+        decoded = decode_artwork(artwork)
 
-        if image.isNull():
+        if decoded is None:
             QMessageBox.warning(
                 self,
                 "Invalid Artwork",
-                "The selected file is not a valid image.",
+                f"The selected file is not a valid JPEG or PNG image:\n{path}",
             )
             return
 
         self.pending_artwork = artwork
         self.artwork_edited = True
 
-        if path.lower().endswith(".png"):
-            self.pending_artwork_mime = "image/png"
-        else:
-            self.pending_artwork_mime = "image/jpeg"
+        self.pending_artwork_mime = decoded[1]
 
         self._show_artwork_preview(artwork)
 

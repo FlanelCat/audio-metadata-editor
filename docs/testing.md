@@ -217,6 +217,12 @@ Codex must never run tests against the user's production audiobook collection.
 
 ## 12. Metadata Safety
 
+`tests/ui/test_artwork_security.py` covers the patched PySide6 requirement,
+restricted decoding, JPEG/PNG content with misleading extensions, and embedded SVG
+preservation through unrelated Save and artwork Remove/Undo on temporary MP3/M4B
+copies. `test_artwork_read_errors.py` also checks disguised SVG and malformed PNG
+rejection without changing single/multi-file accepted or pending artwork state.
+
 Metadata integrity is a high-priority testing concern.
 
 A successful test must verify more than whether the requested field changed.

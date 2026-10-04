@@ -120,7 +120,12 @@ This requirement is particularly important because audiobook files may contain m
 
 ## 9. Artwork
 
-Embedded artwork must be readable and displayable.
+For v0.1.0, artwork selection and preview accept valid JPEG and PNG content only,
+regardless of filename extension or stored MIME. Unsupported embedded artwork is
+not decoded for preview and remains preserved until explicitly replaced or removed.
+Rejected artwork selections preserve accepted and pending artwork, preview and dirty
+state. The runtime requires PySide6 >=6.11.1, excluding the Qt 6.11.0 baseline
+affected by CVE-2026-6210.
 
 Existing artwork must be preserved unless the user explicitly modifies or removes it.
 

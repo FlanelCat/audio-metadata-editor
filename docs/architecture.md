@@ -146,6 +146,13 @@ Changing one supported field must not unnecessarily destroy unrelated or unsuppo
 
 Artwork must remain unchanged unless an artwork modification is explicitly requested.
 
+`ui/artwork.py` centralizes JPEG/PNG preview validation for selected and embedded
+artwork. Byte signatures select an explicit QImageReader format; automatic format
+detection and content-based plugin selection are disabled before decoding. A
+successful decode supplies the selected artwork MIME, independent of its filename.
+Unsupported or invalid content produces no preview; metadata readers/writers retain
+opaque artwork bytes and do not depend on Qt. Rejected selections do not alter intent.
+
 Disk writes are considered destructive operations compared with normal browsing and editing and therefore must occur only following an explicit user action.
 
 ## 7. MP3 Metadata

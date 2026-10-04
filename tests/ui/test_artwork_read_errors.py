@@ -12,7 +12,7 @@ import audio_metadata_editor.ui.main_window as module
 
 @pytest.mark.parametrize('multi', [False, True])
 @pytest.mark.parametrize('intent', ['accepted', 'replacement', 'removal'])
-@pytest.mark.parametrize('failure', ['missing', 'permission', 'read', 'cancel'])
+@pytest.mark.parametrize('failure', ['missing', 'permission', 'read', 'cancel', 'svg.jpg', 'svg.png', 'invalid'])
 def test_chooser_failure_preserves_state(tmp_path, audio_fixture_dir, qtbot, monkeypatch, multi, intent, failure):
     cover = tmp_path / 'cover.png'
     image = QImage(2, 2, QImage.Format_RGB32)
@@ -45,11 +45,16 @@ def test_chooser_failure_preserves_state(tmp_path, audio_fixture_dir, qtbot, mon
     disk = [p.read_bytes() for p in paths]
     messages = []
     monkeypatch.setattr(QMessageBox, 'critical', lambda *a: messages.append(a[1:]))
+    monkeypatch.setattr(QMessageBox, 'warning', lambda *a: messages.append(a[1:]))
     writers = []
     for name in ('write_metadata', 'write_mp3_metadata', 'write_m4b_metadata'):
         spy = MagicMock(side_effect=AssertionError('chooser must not write metadata'))
         monkeypatch.setattr(module, name, spy); writers.append(spy)
-    selected = tmp_path / 'selected.png'
+    selected = tmp_path / ('selected.jpg' if failure == 'svg.jpg' else 'selected.png')
+    if failure.startswith('svg'):
+        selected.write_bytes(b'<svg xmlns="http://www.w3.org/2000/svg" width="2" height="2"/>')
+    elif failure == 'invalid':
+        selected.write_bytes(b'\x89PNG\r\n\x1a\ninvalid')
     def choose(*args):
         if failure == 'missing':
             selected.write_bytes(cover.read_bytes()); selected.unlink()

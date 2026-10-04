@@ -9,7 +9,7 @@ description = "A desktop metadata editor for MP3 and M4B files"
 requires-python = ">=3.12"
 dependencies = [
     "mutagen>=1.48",
-    "PySide6>=6.11",
+    "PySide6>=6.11.1",
 ]
 
 [project.optional-dependencies]
