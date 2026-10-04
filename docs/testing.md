@@ -217,6 +217,13 @@ Codex must never run tests against the user's production audiobook collection.
 
 ## 12. Metadata Safety
 
+`tests/ui/test_oversized_metadata.py` reproduces false dirty state and unrelated-save
+truncation for 40,000-character metadata in MP3/M4B (four failures before the fix).
+It covers every single-line field, actual widget limits and UTF-16 length,
+multiline Description, explicit replacement, Undo/navigation, common/mixed dropdown
+restoration, per-file markers, Generate/Copy values, immediate synchronization and
+write-uncertainty retry. All media writes use temporary public fixture copies.
+
 `tests/ui/test_artwork_security.py` covers the patched PySide6 requirement,
 restricted decoding, JPEG/PNG content with misleading extensions, and embedded SVG
 preservation through unrelated Save and artwork Remove/Undo on temporary MP3/M4B

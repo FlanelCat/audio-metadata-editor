@@ -202,6 +202,14 @@ Pressing Enter while editing a field in the metadata panel must not save metadat
 
 ## 14. Dirty-State Tracking
 
+Metadata-panel display limits must not create edits. A single-line value that the
+widget cannot represent in full is retained separately and shown as a read-only
+“Value too long to edit” notice with a **Replace value** action. That action
+explicitly clears the pending field for replacement; ordinary Save/Discard/Undo
+rules then apply. Existing-value choices may restore or apply complete oversized
+values. Unrelated saves preserve them. This applies to every single-line panel
+field; multiline Description retains complete long text in its existing editor.
+
 The application must track whether each loaded file contains unsaved changes.
 
 Dirty state must be based on actual metadata differences rather than merely on UI events.

@@ -2,7 +2,6 @@ from PySide6.QtCore import Qt, QSignalBlocker, Signal
 from PySide6.QtWidgets import (
     QFormLayout,
     QLabel,
-    QLineEdit,
     QPlainTextEdit,
     QPushButton,
     QVBoxLayout,
@@ -11,6 +10,7 @@ from PySide6.QtWidgets import (
 
 from ..metadata.model import Metadata
 from .existing_values_edit import ExistingValuesEdit, MIXED_PLACEHOLDER
+from .metadata_line_edit import MetadataLineEdit
 
 
 class MetadataPanel(QWidget):
@@ -50,10 +50,10 @@ class MetadataPanel(QWidget):
         self.album_edit = ExistingValuesEdit()
         self.album_artist_edit = ExistingValuesEdit()
         self.genre_edit = ExistingValuesEdit()
-        self.track_edit = QLineEdit()
-        self.track_total_edit = QLineEdit()
-        self.disc_edit = QLineEdit()
-        self.disc_total_edit = QLineEdit()
+        self.track_edit = MetadataLineEdit()
+        self.track_total_edit = MetadataLineEdit()
+        self.disc_edit = MetadataLineEdit()
+        self.disc_total_edit = MetadataLineEdit()
         self.narrator_edit = ExistingValuesEdit()
         self.series_edit = ExistingValuesEdit()
         self.series_number_edit = ExistingValuesEdit()
@@ -127,10 +127,10 @@ class MetadataPanel(QWidget):
     def numeric_field_texts(self):
         """Return raw numeric text in validation order, keyed by display name."""
         return {
-            "Track": self.track_edit.text(),
-            "Track Total": self.track_total_edit.text(),
-            "Disc": self.disc_edit.text(),
-            "Disc Total": self.disc_total_edit.text(),
+            "Track": self.track_edit.value_text(),
+            "Track Total": self.track_total_edit.value_text(),
+            "Disc": self.disc_edit.value_text(),
+            "Disc Total": self.disc_total_edit.value_text(),
         }
 
     def focus_numeric_field(self, name):
@@ -199,7 +199,7 @@ class MetadataPanel(QWidget):
         """Collect editor values without validation or artwork/pending-state ownership."""
         values = {}
         for field, widget in self._editors.items():
-            text = widget.toPlainText() if isinstance(widget, QPlainTextEdit) else widget.text()
+            text = widget.toPlainText() if isinstance(widget, QPlainTextEdit) else widget.value_text()
             if field in {"track_number", "track_total", "disc_number", "disc_total"}:
                 try:
                     values[field] = int(text.strip()) if text.strip() else None

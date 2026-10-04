@@ -220,6 +220,17 @@ Refactoring should be incremental and driven by concrete requirements or testing
 
 `ui/existing_values_edit.py` preserves QLineEdit editing and adds a trailing-button/Alt+Down menu for accepted multi-file values. Only action activation emits the existing text-edit signals; menu navigation is presentation-only. MetadataPanel's `set_existing_values(baselines)` silently builds choices from ordered scalar baseline mappings without owning intent or persistence. MainWindow supplies its accepted multi-file baselines after context acceptance and readback/recovery; rebuilding choices does not replace pending editor text. Single-file population clears the choices. Description remains multiline, and numeric/artwork controls are unchanged.
 
+All single-line panel controls use `ui/metadata_line_edit.py`, directly for numeric
+fields and through ExistingValuesEdit for text. On population it compares Qt's
+actual represented text with the supplied value, including UTF-16 limits. A value
+that cannot fit is retained independently of the empty read-only display;
+`value_text()` returns that complete logical value for collection and numeric
+validation. Replace value explicitly enters the normal pending-edit workflow.
+Dropdown choices, partial synchronization and per-file presentation share this
+population path. MainWindow still owns saved baselines, intent and uncertainty;
+no persistence or dirty-state rules change. Description uses QPlainTextEdit and
+does not have QLineEdit's length cap.
+
 `ui/folder_navigator.py` composes the root heading, full path, Choose Root button and DirectoryTree. It emits root-choice intent and contains no metadata or save policy. `ui/directory_tree.py` presents a synthetic Books root and lazy directory nodes, omitting hidden and symlinked child directories. It installs children only after a complete successful enumeration, with unconditional placeholders avoiding child-directory probing. Clicks and keyboard navigation emit `directory_requested(path)`; accepted selection and restoration are silent. Expansion errors emit a status message and retain a retryable unloaded node.
 
 MainWindow owns root choice, the existing transition guard, FileList loading and accepted `current_directory`, distinct from the navigator's `root_path`. A root is installed only after accepted directory loading. Open Folder navigates without changing the persistent root; an undisplayed destination clears tree selection. Refresh passes only the accepted `current_directory` to the existing guarded directory loader. It does not rebuild the tree or modify the configured root/settings; selection restoration is silent and expansion state is preserved. FileList enumerates before replacing rows and preserves its old model on directory enumeration failure; MainWindow also preflights before the guard. Metadata reads still occur after any explicit Save/Discard.

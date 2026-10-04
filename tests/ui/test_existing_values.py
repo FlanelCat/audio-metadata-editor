@@ -341,7 +341,8 @@ def test_dropdown_button_opens_without_editing(panel, qtbot):
     panel.set_existing_values([{'artist': 'A'}, {'artist': 'B'}])
     edits = []
     panel.field_edited.connect(edits.append)
-    button = panel.artist_edit.findChild(QToolButton)
+    button = next(b for b in panel.artist_edit.findChildren(QToolButton)
+                  if b.defaultAction() == panel.artist_edit._dropdown)
     assert button is not None and button.isVisible()
     qtbot.mouseClick(button, Qt.LeftButton)
     assert menu(panel.artist_edit).isVisible()

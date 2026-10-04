@@ -1,12 +1,13 @@
 """A text editor with optional, commit-only existing-value choices."""
 from PySide6.QtCore import QPoint, Qt, QSignalBlocker
 from PySide6.QtWidgets import QLineEdit, QMenu, QStyle
+from .metadata_line_edit import MetadataLineEdit
 
 
 MIXED_PLACEHOLDER = "<multiple values — edit to apply to all>"
 
 
-class ExistingValuesEdit(QLineEdit):
+class ExistingValuesEdit(MetadataLineEdit):
     """Keep ordinary line editing; only activating a menu item chooses a value."""
 
     def __init__(self, parent=None):
