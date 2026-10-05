@@ -217,6 +217,14 @@ Codex must never run tests against the user's production audiobook collection.
 
 ## 12. Metadata Safety
 
+`tests/integration/test_raw_id3v1.py` protects conflicting physical ID3v1 trailers
+for v2.3/v2.4 field-specific/full/artwork writes, absence, raw-only/untagged files,
+ID3v1.0/1.1 bytes and audio payload preservation through tag growth. The minimal
+Title-only reproducer failed for both ID3v2 versions before the fix. Injected
+snapshot/save/restore/short-write/flush/readback failures must propagate, including
+chained failures. `tests/ui/test_raw_id3v1_save.py` covers single/multi-panel saves
+and preservation failure without success reporting or lost pending intent.
+
 `tests/ui/test_oversized_metadata.py` reproduces false dirty state and unrelated-save
 truncation for 40,000-character metadata in MP3/M4B (four failures before the fix).
 It covers every single-line field, actual widget limits and UTF-16 length,

@@ -95,7 +95,7 @@ def _get_artwork(tags) -> tuple[bytes | None, str]:
 def read_mp3_metadata(path: Path) -> Metadata:
     try:
         try:
-            tags = ID3(path)
+            tags = ID3(path, load_v1=False)
         except ID3NoHeaderError:
             # No ID3 header is valid only if the underlying MPEG audio is readable.
             MP3(path)
@@ -149,7 +149,7 @@ def read_mp3_metadata(path: Path) -> Metadata:
 def load_mp3_tags_for_write(path: Path):
     """Return existing tags, or new in-memory v2.4 tags after MPEG validation."""
     try:
-        return ID3(path, translate=False), False
+        return ID3(path, translate=False, load_v1=False), False
     except ID3NoHeaderError:
         # A missing header alone is not proof of audio. Match the reader's
         # validation policy before allowing an explicit write to create tags.
@@ -334,4 +334,43 @@ def write_mp3_metadata(
     if new_tag and not tags:
         return
     # Retain any existing multi-valued text rather than joining it with '/'.
-    tags.save(path, v2_version=version, v23_sep=None)
+    _save_preserving_raw_id3v1(path, tags, version)
+
+
+def _read_raw_id3v1(stream):
+    """Read only a physical 128-byte TAG trailer, without interpreting fields."""
+    size = stream.seek(0, 2)
+    if size < 128:
+        return None
+    stream.seek(-128, 2)
+    trailer = stream.read(128)
+    if len(trailer) != 128:
+        raise OSError('Could not read the complete raw ID3v1 trailer')
+    return trailer if trailer.startswith(b'TAG') else None
+
+
+def _restore_raw_id3v1(stream, trailer):
+    """Restore after deletion, or leave an already intact trailer alone."""
+    if _read_raw_id3v1(stream) != trailer:
+        stream.seek(0, 2)
+        if stream.write(trailer) != len(trailer):
+            raise OSError('Incomplete raw ID3v1 trailer restoration')
+    stream.flush()
+    if _read_raw_id3v1(stream) != trailer:
+        raise OSError('Raw ID3v1 trailer verification failed')
+
+
+def _save_preserving_raw_id3v1(path, tags, version):
+    # Use the same open file for save/restoration. v1=0 prevents regeneration but
+    # deletes an existing trailer, so it is never sufficient on its own.
+    with open(path, 'r+b') as stream:
+        trailer = _read_raw_id3v1(stream)
+        try:
+            stream.seek(0)
+            tags.save(stream, v1=0, v2_version=version, v23_sep=None)
+        finally:
+            # A save may fail before or after removing the trailer. Do not
+            # duplicate an intact one, and never suppress a save/restore error.
+            # This is best-effort preservation, not rollback of the ID3v2 write.
+            if trailer is not None:
+                _restore_raw_id3v1(stream, trailer)

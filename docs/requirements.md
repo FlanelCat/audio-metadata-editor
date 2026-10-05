@@ -116,6 +116,12 @@ Unknown or unsupported metadata should be preserved whenever technically possibl
 
 Editing one field must not cause unrelated metadata fields to disappear.
 
+All MP3 writes preserve an existing physical 128-byte ID3v1 trailer byte-for-byte,
+including values that conflict with ID3v2. No current feature edits raw ID3v1, and
+writes do not create a trailer when none exists. The logical “ID3v1 Comment” field
+remains an ID3v2 COMM category, not the physical trailer. Raw values are not
+imported into editable ID3v2 fields. Preservation failures must report save failure.
+
 This requirement is particularly important because audiobook files may contain metadata written by several different applications.
 
 ## 9. Artwork

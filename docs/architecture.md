@@ -636,6 +636,18 @@ The MP3 writer loads with `ID3(..., translate=False)` to avoid default v2.4 tran
 
 ### MP3 Comment identities
 
+MP3 ID3 loading uses `load_v1=False` so raw ID3v1 fields cannot be merged into the
+editable ID3v2 view or resurrect a cleared COMM category. A raw-only MP3 follows the
+existing MPEG-validation/new-ID3v2 path. Before persistence, the writer snapshots
+an exact final 128-byte TAG trailer from an open read/write file, resets to the
+start and calls Mutagen with `v1=0`, retaining the existing v2 version policy.
+Because that option removes raw ID3v1, a finally block restores the snapshot if
+not already intact, flushes and verifies exact bytes on the same handle. Snapshot,
+save and restoration errors propagate to existing UI uncertainty handling. A save
+exception is never converted to success by successful restoration; a restoration
+exception retains the save exception as context. This is not crash-atomic saving
+or rollback of ID3v2/audio changes.
+
 The MP3 `_comment_field` helper is shared by reading and writer filtering. Canonical ordinary Comment uses (description="", language="eng"); no fallback is allowed because fallback would resurrect unrelated values after clear. The legacy description-wide ID3v1 Comment category keeps its existing write semantics; its reader now selects deterministically, preferring nonempty English then language-code order. Other COMM frames are outside editable identities and survive, including empty-description non-English comments. This policy uses existing Save/readback/uncertainty handling without introducing Comment state.
 
 
