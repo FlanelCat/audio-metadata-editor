@@ -60,7 +60,8 @@ def _get_artwork(tags) -> tuple[bytes | None, str]:
     if cover.imageformat == 14:
         mime = "image/png"
 
-    return bytes(cover), mime
+    # MP4Cover is already a bytes subclass; retain it without copying a large cover.
+    return cover, mime
 
 def _get_freeform(tags, name: str) -> str:
     atom = f"----:com.apple.iTunes:{name}"

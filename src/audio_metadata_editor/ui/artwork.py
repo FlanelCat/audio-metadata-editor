@@ -1,4 +1,6 @@
 """Decode preview artwork without probing arbitrary Qt image plugins."""
+from ..artwork import MAX_ARTWORK_BYTES
+
 from PySide6.QtCore import QBuffer, QIODevice
 from PySide6.QtGui import QImage, QImageReader
 
@@ -10,6 +12,9 @@ def decode_artwork(data: bytes) -> tuple[QImage, str] | None:
     successful restricted decode accepts the data. Never use unrestricted
     format detection here, including for embedded covers with misleading MIME.
     """
+    if len(data) > MAX_ARTWORK_BYTES:
+        return None
+
     if data.startswith(b'\x89PNG\r\n\x1a\n'):
         image_format, mime = b'png', 'image/png'
     elif data.startswith(b'\xff\xd8\xff'):

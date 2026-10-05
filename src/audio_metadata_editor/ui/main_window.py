@@ -39,6 +39,7 @@ from .. import settings
 from .file_list import FileList, TABLE_FIELDS
 from .metadata_panel import MetadataPanel
 from .artwork import decode_artwork
+from ..artwork import read_artwork_file, require_artwork_size
 from ..metadata import (
     read_metadata,
     MetadataReadError,
@@ -967,9 +968,8 @@ class MainWindow(QMainWindow):
             return
 
         try:
-            with open(path, "rb") as file:
-                artwork = file.read()
-        except OSError as exc:
+            artwork = read_artwork_file(Path(path))
+        except (OSError, ValueError) as exc:
             QMessageBox.critical(
                 self, "Artwork Read Failed",
                 f"Could not read the selected artwork file:\n{path}\n\n{exc}",
@@ -1239,6 +1239,13 @@ class MainWindow(QMainWindow):
             return
 
         selected_fields = dialog.selected_fields
+
+        if "artwork" in selected_fields and self.metadata_clipboard.artwork is not None:
+            try:
+                require_artwork_size(len(self.metadata_clipboard.artwork))
+            except ValueError as exc:
+                QMessageBox.warning(self, "Invalid Artwork", str(exc))
+                return
 
         self.paste_metadata_fields = selected_fields.copy()
 

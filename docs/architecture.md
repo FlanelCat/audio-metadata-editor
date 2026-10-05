@@ -167,6 +167,17 @@ successful decode supplies the selected artwork MIME, independent of its filenam
 Unsupported or invalid content produces no preview; metadata readers/writers retain
 opaque artwork bytes and do not depend on Qt. Rejected selections do not alter intent.
 
+The Qt-independent shared `artwork.py` defines the 20 MiB encoded limit and selected
+file reader. It uses lstat to reject non-regular objects without following final
+symlinks, checks size, then reads at most limit + 1 bytes and rejects overflow.
+These checks are best effort: replacement between stat and open is not prevented.
+The preview decoder checks length before QBuffer copying or QImageReader creation;
+Paste checks replacement length before changing pending state. Metadata readers
+retain opaque embedded payloads even above the limit, and M4B retains the existing
+bytes-subclass cover without copying it. Writers retain their explicit artwork
+intent contract; inability to preview never implies removal. Mutagen parsing and
+its allocations are outside this narrow boundary.
+
 Disk writes are considered destructive operations compared with normal browsing and editing and therefore must occur only following an explicit user action.
 
 ## 7. MP3 Metadata

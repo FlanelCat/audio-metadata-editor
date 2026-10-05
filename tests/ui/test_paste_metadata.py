@@ -460,3 +460,30 @@ def test_mixed_removal_undo_or_discard(window, monkeypatch, discard):
     assert not window._has_unsaved_changes()
     assert all(not window.file_list.item(row, 0).text().startswith('*') for row in range(2))
     assert disk_snapshot(window) == before
+
+
+@pytest.mark.parametrize('multiple', [False, True])
+@pytest.mark.parametrize('removal', [False, True])
+def test_oversized_paste_preserves_pending_intent(window, qtbot, monkeypatch, multiple, removal):
+    from audio_metadata_editor.artwork import MAX_ARTWORK_BYTES
+    before_disk = disk_snapshot(window)
+    if multiple:
+        window.file_list.select_files([str(path) for path in before_disk])
+    paste(window, {'artwork'}, set())
+    if removal:
+        window._remove_artwork()
+    qtbot.keyClicks(window.title_edit, 'Pending title')
+    before = (window.pending_artwork, window.pending_artwork_mime,
+              window.artwork_edited, window.multi_edit_artwork,
+              window.title_edit.text(), window._has_unsaved_changes(),
+              window.artwork_label.pixmap().cacheKey())
+    window.metadata_clipboard.artwork = bytes(MAX_ARTWORK_BYTES + 1)
+    messages = []
+    monkeypatch.setattr(QMessageBox, 'warning', lambda *a: messages.append(a))
+    paste(window, {'artwork', 'title'}, {'artwork'})
+    assert len(messages) == 1
+    assert before == (window.pending_artwork, window.pending_artwork_mime,
+                      window.artwork_edited, window.multi_edit_artwork,
+                      window.title_edit.text(), window._has_unsaved_changes(),
+                      window.artwork_label.pixmap().cacheKey())
+    assert disk_snapshot(window) == before_disk

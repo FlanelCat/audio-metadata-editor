@@ -9,10 +9,11 @@ from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QFileDialog, QMessageBox
 from audio_metadata_editor.metadata import Metadata, write_mp3_metadata
 import audio_metadata_editor.ui.main_window as module
+import audio_metadata_editor.artwork as artwork_policy
 
 @pytest.mark.parametrize('multi', [False, True])
 @pytest.mark.parametrize('intent', ['accepted', 'replacement', 'removal'])
-@pytest.mark.parametrize('failure', ['missing', 'permission', 'read', 'cancel', 'svg.jpg', 'svg.png', 'invalid'])
+@pytest.mark.parametrize('failure', ['missing', 'permission', 'read', 'cancel', 'svg.jpg', 'svg.png', 'invalid', 'oversized', 'symlink', 'directory', 'fifo'])
 def test_chooser_failure_preserves_state(tmp_path, audio_fixture_dir, qtbot, monkeypatch, multi, intent, failure):
     cover = tmp_path / 'cover.png'
     image = QImage(2, 2, QImage.Format_RGB32)
@@ -55,17 +56,29 @@ def test_chooser_failure_preserves_state(tmp_path, audio_fixture_dir, qtbot, mon
         selected.write_bytes(b'<svg xmlns="http://www.w3.org/2000/svg" width="2" height="2"/>')
     elif failure == 'invalid':
         selected.write_bytes(b'\x89PNG\r\n\x1a\ninvalid')
+    elif failure in ('permission', 'read'):
+        selected.write_bytes(cover.read_bytes())
+    elif failure == 'oversized':
+        with selected.open('wb') as stream:
+            stream.truncate(artwork_policy.MAX_ARTWORK_BYTES + 1)
+    elif failure == 'symlink':
+        selected.symlink_to(cover)
+    elif failure == 'directory':
+        selected.mkdir()
+    elif failure == 'fifo':
+        import os
+        os.mkfifo(selected)
     def choose(*args):
         if failure == 'missing':
             selected.write_bytes(cover.read_bytes()); selected.unlink()
         return ('' if failure == 'cancel' else str(selected), '')
     monkeypatch.setattr(QFileDialog, 'getOpenFileName', choose)
     if failure == 'permission':
-        monkeypatch.setattr(module, 'open', MagicMock(side_effect=PermissionError('access denied')), raising=False)
+        monkeypatch.setattr(artwork_policy, 'open', MagicMock(side_effect=PermissionError('access denied')), raising=False)
     elif failure == 'read':
         stream = MagicMock()
         stream.__enter__.return_value.read.side_effect = OSError('input/output error')
-        monkeypatch.setattr(module, 'open', MagicMock(return_value=stream), raising=False)
+        monkeypatch.setattr(artwork_policy, 'open', MagicMock(return_value=stream), raising=False)
     w._choose_artwork()
     assert snapshot() == before
     assert [p.read_bytes() for p in paths] == disk

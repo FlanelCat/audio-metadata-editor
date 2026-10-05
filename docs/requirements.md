@@ -146,6 +146,18 @@ Rejected artwork selections preserve accepted and pending artwork, preview and d
 state. The runtime requires PySide6 >=6.11.1, excluding the Qt 6.11.0 baseline
 affected by CVE-2026-6210.
 
+Artwork intentionally accepted for preview or replacement is limited to 20 MiB
+(20 * 1024 * 1024 encoded bytes) per payload; exactly the limit is allowed.
+Selected cover paths must be regular files, rejecting symlinks and special objects
+before opening. Stat size is checked before a bounded read, which also detects an
+extra byte beyond the limit if the file grows. Oversized selections and pasted
+replacements preserve pending intent and unrelated edits. Oversized embedded covers
+have no preview but remain present and preserved on unrelated saves.
+
+This is not a limit on Mutagen parsing or general metadata sizes. Comprehensive
+filesystem race protection, parser isolation, general CPU/memory quotas, custom
+decompression-bomb or pixel limits, and crash-atomic writes remain deferred.
+
 Existing artwork must be preserved unless the user explicitly modifies or removes it.
 
 Remove Artwork is a no-op for files with no saved artwork. It cancels a pending artwork addition on such files without leaving artwork-related dirty state. In a mixed selection, only files with saved artwork acquire pending removal; unrelated pending field edits remain intact. Artwork-only saves skip files where removal is a no-op.

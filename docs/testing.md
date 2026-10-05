@@ -468,3 +468,34 @@ broader/full suites protect normal regular-file saves. These tests exercise visi
 symlink substitution at deterministic boundaries, not TOCTOU race-proofing, ancestor
 symlink traversal, hard links, bind mounts, inode replacement, openat/O_NOFOLLOW
 handling or general filesystem isolation. Those protections remain deferred.
+
+### S6 artwork byte boundary (v0.1.0 portion)
+
+`tests/ui/test_artwork_resources.py` covers the exact 20 MiB constant, rejection
+before Qt buffer allocation, real JPEG/PNG decoding at exactly the limit, stat-size
+rejection without opening, bounded reads after simulated growth, and oversized
+embedded MP3/M4B preservation through a scalar panel save. M4B cover identity checks
+protect against an extra bytes copy. All audio inputs are temporary public fixture
+copies; oversized selected files are generated sparse files.
+
+`test_artwork_read_errors.py` additionally covers oversized selected files,
+symlinks, directories and FIFOs across accepted/replacement/removal state and
+single/multiple selections, preserving scalar edits and proving zero writer calls.
+Open/read-failure mocks now target the shared reader and use existing regular files
+so the failures still occur after successful stat validation.
+`test_paste_metadata.py` covers oversized clipboard rejection with existing pending
+replacement/removal and scalar edits for both formats and selection modes.
+
+Validation commands (prefix each with `QT_QPA_PLATFORM=offscreen .venv/bin/python -m pytest -q`):
+
+- Focused: `tests/ui/test_artwork_resources.py tests/ui/test_artwork_security.py tests/ui/test_artwork_read_errors.py` — 92 passed.
+- S1/read-error/preservation/paste: `tests/ui/test_artwork_security.py tests/ui/test_artwork_read_errors.py tests/ui/test_panel_preservation.py tests/ui/test_paste_metadata.py tests/ui/test_artwork_resources.py` — 212 passed before the two additional exact-limit raster cases.
+- Metadata/UI saves: `tests/integration tests/ui/test_table_editing.py tests/ui/test_representation_save.py tests/ui/test_partial_multi_save.py tests/ui/test_single_panel_uncertainty.py tests/ui/test_ui_read_errors.py` — 1016 passed.
+
+These checks do not bound Mutagen parsing, general tag sizes or parser allocations.
+TOCTOU-proof filesystem handling, process isolation, CPU/memory quotas, custom
+pixel/decompression analysis and crash-atomic writes remain deferred.
+
+Final full offscreen suite: 2510 passed in 58.96 seconds with
+`QT_QPA_PLATFORM=offscreen .venv/bin/python -m pytest -q -o faulthandler_timeout=30`.
+`git diff --check` passed.
