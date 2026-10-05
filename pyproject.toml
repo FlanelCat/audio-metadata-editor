@@ -1,16 +1,35 @@
 [build-system]
-requires = ["setuptools>=68"]
+requires = ["setuptools>=77.0.3"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "audio-metadata-editor"
 version = "0.1.0"
-description = "A desktop metadata editor for MP3 and M4B files"
+description = "A desktop metadata editor for MP3 and M4B audiobooks"
+readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [{name = "Patrick Edlund"}]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: End Users/Desktop",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Operating System :: POSIX :: Linux",
+    "Topic :: Multimedia :: Sound/Audio",
+]
 requires-python = ">=3.12"
 dependencies = [
     "mutagen>=1.48",
     "PySide6>=6.11.1",
 ]
+
+[project.urls]
+Homepage = "https://github.com/FlanelCat/audio-metadata-editor"
+Repository = "https://github.com/FlanelCat/audio-metadata-editor"
+Issues = "https://github.com/FlanelCat/audio-metadata-editor/issues"
 
 [project.optional-dependencies]
 test = ["pytest>=8", "pytest-qt>=4.4"]

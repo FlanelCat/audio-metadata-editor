@@ -29,3 +29,7 @@ tests/*
 
 # Local/manual development fixtures — never commit
 dev-fixtures/
+
+# Packaging output
+build/
+dist/
