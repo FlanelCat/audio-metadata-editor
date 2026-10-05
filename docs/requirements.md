@@ -4,9 +4,9 @@
 
 Audio Metadata Editor is a desktop application for viewing and editing metadata in audiobook files.
 
-The application is intended to provide a workflow similar to tools such as Mp3tag and Metadatics while being designed specifically around the requirements of an audiobook library.
+The application supports precise manual editing of audiobook metadata with explicit save actions.
 
-The application does not maintain its own media database. The audio files and their embedded metadata are the source of truth. Plex is used separately for library management.
+The application does not maintain its own media database. The audio files and their embedded metadata are the source of truth.
 
 ## 2. Supported Platforms
 
@@ -166,7 +166,7 @@ Editing unrelated metadata must not rewrite or remove artwork.
 
 If opening or reading a selected artwork file fails, report the path and error without changing accepted artwork, pending replacement/removal intent, preview, dirty state or unrelated pending edits. No metadata is written. Cancelling the chooser remains a no-op.
 
-Future versions may provide artwork replacement and management functionality.
+Artwork replacement and removal are supported through pending edits and explicit Save.
 
 ## 10. File List
 
@@ -326,7 +326,7 @@ The repository's requirements and architecture documentation should be updated w
 
 The application is not intended to:
 
-* replace Plex;
+* manage a playback library;
 * maintain a duplicate audiobook database;
 * automatically reorganize the user's audiobook library;
 * automatically modify metadata merely because a file was discovered;

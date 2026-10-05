@@ -190,7 +190,19 @@ During development, relevant tests may be run individually.
 
 Before considering a code change complete, the complete automated test suite should be run.
 
-The standard test command should eventually be:
+Install the test dependencies from the repository root:
+
+```sh
+python -m pip install -e '.[test]'
+```
+
+For headless testing:
+
+```sh
+QT_QPA_PLATFORM=offscreen python -m pytest
+```
+
+With a graphical display available, the standard test command is:
 
 ```bash
 pytest

@@ -625,7 +625,7 @@ The current implementation already has a useful separation between:
 
 The next architectural improvements should focus on:
 
-1. establishing automated tests around existing metadata behavior;
+1. maintaining automated coverage of existing metadata behavior;
 2. separating table editing/navigation from disk persistence;
 3. making dirty-state behavior independently testable;
 4. reducing application-state responsibilities in `MainWindow` when concrete changes provide an opportunity;
