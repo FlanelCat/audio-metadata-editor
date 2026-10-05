@@ -499,3 +499,14 @@ pixel/decompression analysis and crash-atomic writes remain deferred.
 Final full offscreen suite: 2510 passed in 58.96 seconds with
 `QT_QPA_PLATFORM=offscreen .venv/bin/python -m pytest -q -o faulthandler_timeout=30`.
 `git diff --check` passed.
+
+### Application icon
+
+`tests/ui/test_application_icon.py` checks package-resource existence and decoding
+from an unrelated working directory, startup icon assignment before MainWindow,
+main-window/dialog inheritance, and explicit missing/invalid-resource errors.
+The startup test reuses pytest-qt's QApplication, isolates settings, and restores
+the previous global icon. It does not enter a second event loop or compare pixels.
+Run with `test_folder_navigator.py` and `test_metadata_panel.py` for startup coverage.
+A temporary staged wheel build also verified inclusion of the exact approved PNG
+and successful resource loading from the extracted wheel outside the repository.

@@ -20,3 +20,6 @@ audio-metadata-editor = "audio_metadata_editor.main:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.setuptools.package-data]
+audio_metadata_editor = ["resources/application-icon.png"]

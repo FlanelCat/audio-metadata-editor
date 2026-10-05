@@ -704,3 +704,14 @@ while the writer exception is still reported as failure. Auto-number checks late
 Track reads against numbers verified during that operation and reinstates immediate
 verification uncertainty on mismatch. Panel/common/per-file uncertainty ownership
 and current-intent retry remain unchanged.
+
+### Application icon
+
+`main.py` sets QApplication's window icon before constructing MainWindow, allowing
+normal top-level windows/dialogs to inherit it where the platform supports this.
+`ui/application_icon.py` loads `resources/application-icon.png` through
+`importlib.resources`, eagerly decoding the PNG into a QPixmap/QIcon without a
+working-directory dependency or temporary-file lifetime. Missing/invalid packaged
+icons raise an explicit error; no system/theme fallback is substituted. Setuptools
+includes the runtime PNG as package data. It is an unchanged copy of the approved
+256-pixel export; original branding and provenance remain under `assets/branding/`.
