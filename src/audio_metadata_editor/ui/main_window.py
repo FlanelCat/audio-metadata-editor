@@ -27,8 +27,9 @@ from PySide6.QtWidgets import (
 )
 
 from ..editing_rules import changed_scalar_fields, effective_multi_fields, effective_fields_for_target
-from ..metadata.writer import write_metadata, validate_date_for_file
-from ..metadata.date import verify_date, DateVerificationError
+from ..metadata.writer import write_metadata, validate_values_for_file
+from ..metadata.date import DateVerificationError
+from ..metadata.representation import scalar_values, verify_values, RepresentationError, VerificationError
 from .dialogs.auto_number_dialog import AutoNumberDialog
 from .dialogs.generate_text_dialog import GenerateTextDialog, TARGETS
 from .dialogs.paste_fields_dialog import PasteFieldsDialog
@@ -83,6 +84,7 @@ class MainWindow(QMainWindow):
         self.current_metadata = None
         # Immediate writes awaiting a successful readback, not new panel edits.
         self._unverified_fields = {}
+        self._unverified_requests = {}
         self.pending_artwork = None
         self.pending_artwork_mime = ""
         # Replacement/removal intent cannot be inferred from the first cover alone.
@@ -244,6 +246,7 @@ class MainWindow(QMainWindow):
         self._unresolved_single_fields.clear()
         self._unresolved_multi_fields.clear()
         self._unverified_fields.clear()
+        self._unverified_requests.clear()
         self._multi_field_baselines.clear()
         self.current_file = None
         self.selected_files = []
@@ -398,6 +401,7 @@ class MainWindow(QMainWindow):
         self._multi_field_baselines.clear()
         new_file = Path(path)
         self._unverified_fields.pop(new_file, None)
+        self._unverified_requests.pop(new_file, None)
         self.selected_files = [path]
         self.current_file = new_file
         self._context_index = QPersistentModelIndex(self.file_list.currentIndex())
@@ -525,23 +529,27 @@ class MainWindow(QMainWindow):
         metadata.artwork_mime = self.pending_artwork_mime
         return metadata
 
-    def _pending_dates(self):
-        """Only validate Date when this save intends to write it."""
+    def _pending_save_values(self):
+        """Snapshot precisely the scalar intent for complete-batch preflight."""
         edited = self._get_edited_metadata()
         if len(self.selected_files) == 1:
-            if (edited.date != self.current_metadata.date or 'date' in self._unresolved_single_fields
-                    or 'date' in self._per_file_changes(self.current_file)):
-                return {self.current_file: edited.date}
-            return {}
-        return {Path(p): self._per_file_edits.get(Path(p), {}).get('date', edited.date)
-                for p in self.selected_files
-                if 'date' in self.multi_edit_fields or 'date' in self._per_file_changes(Path(p))}
+            fields = (changed_scalar_fields(self.current_metadata, edited)
+                      | (self._unresolved_single_fields - {'artwork'})
+                      | self._per_file_changes(self.current_file))
+            return {self.current_file: scalar_values(edited, fields)}
+        result = {}
+        for selected in self.selected_files:
+            path = Path(selected)
+            fields = self.multi_edit_fields | self._per_file_changes(path)
+            pending = self._per_file_edits.get(path, {})
+            result[path] = {field: pending.get(field, getattr(edited, field)) for field in fields}
+        return result
 
     def _save_changes(self):
         # Retry verification without rewriting a field that may already be saved.
         try:
             self._verify_field_saves()
-        except MetadataReadError as exc:
+        except (MetadataReadError, VerificationError, DateVerificationError) as exc:
             QMessageBox.critical(self, "Readback Failed", str(exc))
             return
         if not self._validate_numeric_fields():
@@ -555,13 +563,14 @@ class MainWindow(QMainWindow):
             )
             return
 
-        date_intent = self._pending_dates()
+        save_intent = self._pending_save_values()
         try:
-            for path, value in date_intent.items():
-                validate_date_for_file(path, value)
+            for path, values in save_intent.items():
+                validate_values_for_file(path, values)
         except Exception as exc:
-            QMessageBox.warning(self, "Invalid Date", f"Cannot save Date for {path.name}: {exc}")
-            self.metadata_panel.focus_date_field()
+            field = exc.field if isinstance(exc, RepresentationError) else 'date'
+            QMessageBox.warning(self, "Invalid Metadata", f"Cannot save {path.name}: {exc}")
+            self.metadata_panel.focus_field(field)
             return
 
         # Multi-file editing
@@ -635,9 +644,9 @@ class MainWindow(QMainWindow):
                             **artwork_options,
                         )
 
+                    save_intent[path].update(artwork_options)
                     metadata = self._read_after_write(path)
-                    if path in date_intent:
-                        verify_date(date_intent[path], metadata.date)
+                    verify_values(path, save_intent[path], metadata)
                     verified_writes += 1
                     for field in fields:
                         baseline[field] = getattr(metadata, field)
@@ -667,9 +676,8 @@ class MainWindow(QMainWindow):
             try:
                 metadatas = [self._read_after_write(Path(path)) for path in self.selected_files]
                 for path, metadata in zip(self.selected_files, metadatas):
-                    if Path(path) in date_intent:
-                        verify_date(date_intent[Path(path)], metadata.date)
-            except (MetadataReadError, DateVerificationError) as exc:
+                    verify_values(Path(path), save_intent[Path(path)], metadata)
+            except (MetadataReadError, DateVerificationError, VerificationError) as exc:
                 self.metadata_panel.set_existing_values(tuple(self._multi_field_baselines.values()))
                 self._render_per_file_edits()
                 self._update_dirty_indicators()
@@ -763,9 +771,9 @@ class MainWindow(QMainWindow):
                     f"Unsupported file type: {self.current_file.suffix}"
                 )
 
+            save_intent[self.current_file].update(artwork_options)
             metadata = self._read_after_write(self.current_file)
-            if self.current_file in date_intent:
-                verify_date(date_intent[self.current_file], metadata.date)
+            verify_values(self.current_file, save_intent[self.current_file], metadata)
 
         except Exception as exc:
             QMessageBox.critical(
@@ -845,6 +853,7 @@ class MainWindow(QMainWindow):
         self._unresolved_per_file_fields.clear()
         for path in self.selected_files:
             self._unverified_fields.pop(Path(path), None)
+            self._unverified_requests.pop(Path(path), None)
         if len(self.selected_files) > 1:
             self.multi_edit_fields.clear()
             self.multi_edit_artwork = False
@@ -1422,10 +1431,14 @@ class MainWindow(QMainWindow):
         """
         paths = self._unverified_fields if paths is None else paths
         verified = {path: self._read_after_write(path) for path in paths}
+        for path, metadata in verified.items():
+            verify_values(path, self._unverified_requests.get(path, {}), metadata)
         common_updates = {}
         mixed_fields = set()
         if verified and len(self.selected_files) > 1:
             metadatas = [self._read_after_write(Path(path)) for path in self.selected_files]
+            for selected, metadata in zip(self.selected_files, metadatas):
+                verify_values(Path(selected), self._unverified_requests.get(Path(selected), {}), metadata)
             fields = set().union(*(self._unverified_fields[path] for path in verified))
             for field in fields - self.multi_edit_fields - set().union(*(set(v) for v in self._per_file_edits.values())):
                 value, common = self._common_metadata_value(metadatas, field)
@@ -1452,6 +1465,7 @@ class MainWindow(QMainWindow):
                     )
             self.file_list.update_file_metadata(path, metadata)
             del self._unverified_fields[path]
+            self._unverified_requests.pop(path, None)
         if verified:
             self.metadata_panel.set_existing_values(tuple(self._multi_field_baselines.values()))
             self.metadata_panel.set_field_values(common_updates, mixed_fields=mixed_fields)
@@ -1471,19 +1485,21 @@ class MainWindow(QMainWindow):
 
     def _save_metadata_field(self, path, field, value):
         """Persist one field and synchronize only its panel baseline."""
+        validate_values_for_file(path, {field: value})
         metadata = read_metadata(path)
         previous_value = getattr(metadata, field)
         if previous_value != value:
             setattr(metadata, field, value)
             # Invocation may modify disk even if the writer subsequently raises.
             self._unverified_fields.setdefault(path, set()).add(field)
+            self._unverified_requests.setdefault(path, {})[field] = value
             try:
                 write_metadata(path, metadata, fields={field})
             except Exception as exc:
                 self._update_dirty_indicators()
                 try:
                     verified = self._verify_field_saves((path,))
-                except MetadataReadError as recovery_error:
+                except (MetadataReadError, VerificationError, DateVerificationError) as recovery_error:
                     outcome = (
                         "The file may have changed. Recovery could not verify the file; "
                         f"the field remains unresolved.\n{recovery_error}"
@@ -1501,12 +1517,17 @@ class MainWindow(QMainWindow):
                 raise RuntimeError(
                     f"Write operation failed: {exc}\n{outcome}\nNo rollback was attempted."
                 ) from exc
+        self._unverified_requests.setdefault(path, {})[field] = value
         try:
             metadata = self._read_after_write(path)
-        except MetadataReadError:
+            verify_values(path, {field: value}, metadata)
+        except (MetadataReadError, VerificationError, DateVerificationError):
             self._unverified_fields.setdefault(path, set()).add(field)
             self._update_dirty_indicators()
             raise
+        self._unverified_requests.get(path, {}).pop(field, None)
+        if not self._unverified_requests.get(path):
+            self._unverified_requests.pop(path, None)
         unverified = self._unverified_fields.get(path, set())
         unverified.discard(field)
         if not unverified:
@@ -1544,13 +1565,15 @@ class MainWindow(QMainWindow):
         sorting = self.file_list.isSortingEnabled()
         self.file_list.setSortingEnabled(False)
         saved = 0
+        requested_tracks = {}
         try:
             for number, path in enumerate(paths, start):
                 try:
                     self._save_metadata_field(Path(path), "track_number", number)
                     saved += 1
+                    requested_tracks[Path(path)] = number
                     if len(self.selected_files) > 1 and "track_number" not in self.multi_edit_fields:
-                        self._refresh_selected_tracks()
+                        self._refresh_selected_tracks(requested_tracks)
                 except Exception as exc:
                     QMessageBox.critical(
                         self, "Auto-number Tracks Failed",
@@ -1560,20 +1583,31 @@ class MainWindow(QMainWindow):
                     )
                     return
             if len(self.selected_files) > 1:
-                self._refresh_selected_tracks()
+                self._refresh_selected_tracks(requested_tracks)
                 # Preserve Auto-number's existing successful Track-intent reset.
                 self._unresolved_multi_fields.discard("track_number")
                 self.multi_edit_fields.discard("track_number")
                 self._update_multi_edit_visuals()
             self.statusBar().showMessage(f"Auto-numbered {saved} file(s).")
-        except MetadataReadError as exc:
+        except (MetadataReadError, VerificationError) as exc:
             QMessageBox.critical(self, "Auto-number Readback Failed",
                                  f"{saved} file(s) saved. No rollback was attempted.\n\n{exc}")
         finally:
             self.file_list.setSortingEnabled(sorting)
 
-    def _refresh_selected_tracks(self):
+    def _refresh_selected_tracks(self, requested_tracks):
         metadatas = [read_metadata(Path(path)) for path in self.selected_files]
+        for selected, metadata in zip(self.selected_files, metadatas):
+            path = Path(selected)
+            if path in requested_tracks:
+                requested = {'track_number': requested_tracks[path]}
+                try:
+                    verify_values(path, requested, metadata)
+                except VerificationError:
+                    self._unverified_fields.setdefault(path, set()).add('track_number')
+                    self._unverified_requests.setdefault(path, {}).update(requested)
+                    self._update_dirty_indicators()
+                    raise
         value, common = self._common_metadata_value(metadatas, "track_number")
         self.metadata_panel.set_field_values(
             {"track_number": value},

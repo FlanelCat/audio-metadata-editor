@@ -149,6 +149,11 @@ class MetadataPanel(QWidget):
         self.date_edit.setFocus()
         self.date_edit.selectAll()
 
+    def focus_field(self, field):
+        widget = self._editors[field]
+        widget.setFocus()
+        widget.selectAll()
+
     def set_id3v1_comment_enabled(self, enabled):
         """Apply the caller's ID3v1 Comment availability decision."""
         self.id3v1_comment_edit.setEnabled(enabled)

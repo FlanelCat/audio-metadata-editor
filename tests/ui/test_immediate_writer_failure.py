@@ -87,20 +87,27 @@ def test_enter_failure_outcomes(setup, qtbot, column, field, value, stage, unrea
     assert s.writes == [(path, {field})]
     assert len(s.errors) == 1 and 'injected immediate writer failure' in s.errors[0][2]
     message = s.errors[0][2]
-    outcome = 'could not verify' if unreadable else {'before': 'pre-write field value', 'after': 'requested field value', 'different': 'different field value'}[stage]
+    outcome = 'could not verify' if unreadable or stage != 'after' else 'requested field value'
     assert outcome in message and 'No rollback was attempted' in message
     assert not s.win.file_list.cell_save_succeeded
     assert s.win.current_file == path and s.win.file_list.currentRow() == 0
-    if unreadable:
+    if unreadable or stage != 'after':
+        assert s.win._unverified_requests == {path: {field: requested}}
         assert s.win._unverified_fields == {path: {field}}
         assert getattr(s.win.current_metadata, field) == getattr(before, field)
         assert s.win.file_list.item(0, 0).text().startswith('*')
         assert s.win._has_unsaved_changes()
         s.recovery_fails = False
         s.win._save_changes()
+        if stage != 'after':
+            assert s.win._unverified_fields == {path: {field}}
+            assert s.win._unverified_requests == {path: {field: requested}}
+            assert 'did not match' in s.errors[-1][2]
+            s.win._undo_changes()  # Explicitly accept disk truth, without replay.
     else:
         assert 'Recovery read found' in s.errors[0][2]
     assert not s.win._unverified_fields
+    assert not s.win._unverified_requests
     assert getattr(s.win.current_metadata, field) == expected
     assert getattr(s.win, 'track_edit' if column == 1 else 'title_edit').text() == str(expected)
     assert s.win.file_list.item(0, column).text() == str(expected)
@@ -130,14 +137,21 @@ def test_auto_stops_and_reports_current_outcome(setup, monkeypatch, failed_row, 
     assert all(p.read_bytes() == before[p] for p in s.paths[failed_row + 1:])
     assert len(s.errors) == 1
     assert f'{failed_row} file(s) saved and verified' in s.errors[0][2]
-    if unreadable:
+    if unreadable or stage != 'after':
+        assert s.win._unverified_requests == {s.failure: {'track_number': 8 + failed_row}}
         assert s.win._unverified_fields == {s.failure: {'track_number'}}
         assert s.win._has_unsaved_changes()
         s.recovery_fails = False
         s.win._save_changes()
+        if stage != 'after':
+            assert s.win._unverified_fields == {s.failure: {'track_number'}}
+            assert s.win._unverified_requests == {s.failure: {'track_number': 8 + failed_row}}
+            assert 'did not match' in s.errors[-1][2]
+            s.win._undo_changes()
     else:
         assert 'Recovery read found' in s.errors[0][2]
     assert not s.win._unverified_fields
+    assert not s.win._unverified_requests
     assert not s.win._has_unsaved_changes()
     assert [s.win.file_list.item(r, 1).text() for r in range(3)] == list(map(str, expected))
     assert len(s.writes) == failed_row + 1
@@ -153,6 +167,7 @@ def test_recovery_preserves_pending_panel_values(setup, qtbot, same_field):
     assert widget.text() == 'pending panel'
     assert s.win._has_unsaved_changes()
     assert not s.win._unverified_fields
+    assert not s.win._unverified_requests
     assert len(s.writes) == 1
 
 
@@ -184,6 +199,7 @@ def test_auto_recovery_preserves_overlapping_panel_uncertainty(setup, monkeypatc
         s.recovery_fails = False
         s.win._verify_field_saves()
     assert not s.win._unverified_fields
+    assert not s.win._unverified_requests
     assert unresolved == {'track_number'}
     assert s.win.track_edit.text() == '4'
     assert s.win._has_unsaved_changes()
@@ -238,6 +254,7 @@ def test_recovery_does_not_clear_other_paths(setup):
     assert s.win.file_list.item(1, 2).text() == 'second'
     s.win._save_changes()
     assert not s.win._unverified_fields
+    assert not s.win._unverified_requests
     assert s.writes == [(p, {'title'}) for p in s.paths[:2]]
 
 
@@ -249,6 +266,44 @@ def test_required_read_failure_does_not_invoke_writer(setup, monkeypatch):
     s.win._save_table_cell(str(s.paths[0]), 2, 'new')
     assert not s.writes
     assert not s.win._unverified_fields
+    assert not s.win._unverified_requests
     assert not s.win._has_unsaved_changes()
     assert s.win.current_metadata.title == 'A'
     assert read_metadata(s.paths[0]).title == 'A'
+
+
+@pytest.mark.parametrize('stage,unreadable', [('after', False), ('different', False), ('before', False), ('after', True)])
+def test_requested_value_recorded_before_writer_and_recovery(setup, monkeypatch, stage, unreadable):
+    s = setup
+    path = s.paths[0]
+    s.stage, s.recovery_fails = stage, unreadable
+    writer = module.write_metadata
+    def checked_write(path, metadata, *, fields):
+        assert s.win._unverified_fields == {path: {'title'}}
+        assert s.win._unverified_requests == {path: {'title': 'requested'}}
+        writer(path, metadata, fields=fields)
+    monkeypatch.setattr(module, 'write_metadata', checked_write)
+    s.win._save_table_cell(str(path), 2, 'requested')
+    unresolved = unreadable or stage != 'after'
+    assert s.win._unverified_fields == ({path: {'title'}} if unresolved else {})
+    assert s.win._unverified_requests == ({path: {'title': 'requested'}} if unresolved else {})
+    assert not s.win.file_list.cell_save_succeeded
+    assert 'Write operation failed' in s.errors[-1][2]
+    s.recovery_fails = False
+    s.win._save_changes()
+    mismatch = stage != 'after'
+    assert s.win._unverified_fields == ({path: {'title'}} if mismatch else {})
+    assert s.win._unverified_requests == ({path: {'title': 'requested'}} if mismatch else {})
+    assert s.writes == [(path, {'title'})]
+    if mismatch:
+        assert 'did not match' in s.errors[-1][2]
+
+
+def test_representation_preflight_creates_no_uncertainty(setup):
+    s = setup
+    value = 'bad\0value' if s.paths[0].suffix == '.mp3' else 'bad\ud800'
+    s.win._save_table_cell(str(s.paths[0]), 2, value)
+    assert not s.writes
+    assert s.win._unverified_fields == {}
+    assert s.win._unverified_requests == {}
+    assert not s.win.file_list.cell_save_succeeded

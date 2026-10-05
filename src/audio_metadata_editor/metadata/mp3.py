@@ -25,6 +25,7 @@ from mutagen.id3 import (
 from .date import normalize_date
 from .model import Metadata
 from .errors import MetadataReadError
+from .representation import scalar_values, validate_values
 
 _ARTWORK_UNCHANGED = object()
 
@@ -169,6 +170,7 @@ def write_mp3_metadata(
 
     Omitting artwork preserves it, including during field-specific writes.
     """
+    validate_values('.mp3', scalar_values(metadata, fields))
     # Default translation drops v2.3-only frames before we can preserve them.
     # Keep the loaded version for both filtered and full writes; never migrate
     # unrelated metadata merely to edit a supported logical field.

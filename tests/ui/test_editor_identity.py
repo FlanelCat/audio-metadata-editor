@@ -169,7 +169,14 @@ def test_sorted_failure_targets_exact_file(window, qtbot, monkeypatch, failure):
         assert window.current_metadata.title == 'AAA'
         assert window.album_edit.text() == 'Pending album'
     else:
-        assert not window._unverified_fields
+        assert window._unverified_fields == {target: {'title'}}
+        assert window._unverified_requests == {target: {'title': 'AAA'}}
+        from audio_metadata_editor.metadata.representation import VerificationError
+        with pytest.raises(VerificationError, match='did not match'):
+            window._verify_field_saves()
+        assert window._unverified_fields == {target: {'title'}}
+        assert window._unverified_requests == {target: {'title': 'AAA'}}
+        assert writes == [(target, {'title'})]
     assert {path: read_metadata(path) for path in original} == original
 
 

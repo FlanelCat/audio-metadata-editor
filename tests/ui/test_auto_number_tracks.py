@@ -181,6 +181,16 @@ def test_partial_failure(window, monkeypatch):
     assert str(ordered[1]) in errors[0][2]
     assert 'Test write failure' in errors[0][2]
     assert '1 file(s) saved' in errors[0][2]
+    assert 'did not match' in errors[0][2]
+    assert window._has_unsaved_changes()
+    assert window._unverified_fields == {ordered[1]: {'track_number'}}
+    assert window._unverified_requests == {ordered[1]: {'track_number': 9}}
+    window._save_changes()
+    assert calls == ordered[:2]  # Verification-only retry must not replay writes.
+    assert window._unverified_fields == {ordered[1]: {'track_number'}}
+    assert window._unverified_requests == {ordered[1]: {'track_number': 9}}
+    window._undo_changes()
+    assert not window._unverified_fields and not window._unverified_requests
     assert not window._has_unsaved_changes()
 
 

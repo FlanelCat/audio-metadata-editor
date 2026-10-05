@@ -146,6 +146,12 @@ def test_failed_save_keeps_loaded_state(window, qtbot, monkeypatch):
     assert window.current_metadata == before
     assert read_metadata(window.current_file) == before
     assert window.file_list.item(0, 2).text() == before.title
+    assert window._has_unsaved_changes()
+    assert window._unverified_fields == {window.current_file: {'title'}}
+    assert window._unverified_requests == {window.current_file: {'title': 'Failed title'}}
+    assert 'did not match' in errors[0][2]
+    window._undo_changes()
+    assert not window._unverified_fields and not window._unverified_requests
     assert not window._has_unsaved_changes()
 
 

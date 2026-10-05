@@ -380,3 +380,63 @@ The Ctrl-click deselection test in `test_directory_transitions.py` uses an expli
 ### Scrollable metadata panel
 
 `tests/ui/test_metadata_scrolling.py` exercises real 1024×600 and 1200×650 windows: vertical scrolling, bottom-field Tab/focus visibility, numeric/Date focus, absence of horizontal scrolling at these widths, artwork selection/removal/Undo, pending text and explicit Save. Existing MetadataPanel control/order/alias tests remain, with the splitter assertion updated to account for the scroll container.
+
+### S4 representability regressions
+
+`tests/unit/test_representation.py` covers intended-field comparison, exact text and
+Series Number semantics, Date normalization, numeric absence and artwork payload/MIME.
+`tests/integration/test_representation_writes.py` exercises every scalar field on
+temporary public MP3 v2.3/v2.4 and M4B fixtures, ID3 NUL truncation, M4B NUL retention,
+other controls, Unicode/surrogates, genre aliases/loss, numeric bounds and isolation.
+`tests/ui/test_representation_save.py` covers zero-call preflight, raw pending intent,
+later invalid batch targets, editable/non-advancing Enter rejection, single/multi,
+Generate/Copy, injected per-file/final mismatches, current-intent retries, artwork,
+and Auto-number/Enter verification without replay.
+
+The minimal pre-fix MP3 reproducer wrote Title `left\0right`, read back `left`,
+reported `Saved` and cleared dirty state. M4B retained the same NUL-containing text.
+Direct Mutagen experiments also confirmed M4B's unsigned 16-bit pairs, Unicode
+surrogate encoding failure, and MP3 genre parser truncation/expansion. Existing
+M4B zero-to-empty tests remain unchanged and protect that supported normalization.
+
+Run the three new S4 files, existing Date/uncertainty/table/Generate/Copy/Auto-number
+suites and all integration tests, followed by broader UI and the full offscreen
+suite. Existing artwork-security, oversized-value and raw-ID3v1 suites protect
+S1/S2/S3. No private media or fixture masters are modified.
+
+S4 validation run results:
+
+- Initial existing Date/immediate/single-panel/multi-panel/field-isolation selection:
+  510 passed.
+- Focused S4 plus Auto-number and immediate-writer-failure coverage: 444 passed:
+  `QT_QPA_PLATFORM=offscreen .venv/bin/python -m pytest -q tests/unit/test_representation.py tests/integration/test_representation_writes.py tests/ui/test_representation_save.py tests/ui/test_auto_number_tracks.py tests/ui/test_immediate_writer_failure.py`
+- Broader explicit-save/UI and complete MP3/M4B integration coverage: 1277 passed:
+  `QT_QPA_PLATFORM=offscreen .venv/bin/python -m pytest -q -o faulthandler_timeout=30 tests/ui/test_date_save.py tests/ui/test_ui_read_errors.py tests/ui/test_table_editing.py tests/ui/test_editor_identity.py tests/ui/test_immediate_writer_failure.py tests/ui/test_single_panel_uncertainty.py tests/ui/test_partial_multi_save.py tests/ui/test_generate_text.py tests/ui/test_copy_cells.py tests/ui/test_auto_number_tracks.py tests/integration`
+- Full suite after the final code/test changes: 2427 passed in 55.77 seconds:
+  `QT_QPA_PLATFORM=offscreen .venv/bin/python -m pytest -q -o faulthandler_timeout=30`
+- `git diff --check`: clean.
+
+These checks verify the logical metadata exposed by the existing readers, not raw
+serialization identity or arbitrary unknown-frame preservation. Artwork verification
+uses the model's first-cover payload/MIME; existing preservation tests separately
+protect replacement/removal and unrelated covers. Preflight cannot eliminate later
+I/O failures or concurrent external modifications; mismatches remain uncertain and
+no rollback, crash-atomicity or general external-change conflict detection is added.
+
+S4 immediate-recovery ordering follow-up: the requested logical value is now
+recorded alongside the unverified field before invoking the writer. New MP3/M4B
+regressions inspect both structures at invocation, after matching/different/no-write
+exceptions and failed recovery, after verification-only retry, and after preflight
+rejection. The initial regression run produced 8 failures and 2 passes. Existing
+Enter, sorted-editor and Auto-number failure assertions now require mismatches to
+remain unresolved until verified or explicitly reloaded.
+
+Follow-up validation:
+
+- Focused S4/immediate-save and relevant uncertainty/Auto-number coverage: 862 passed
+  (`QT_QPA_PLATFORM=offscreen .venv/bin/python -m pytest -q tests/ui/test_immediate_writer_failure.py tests/ui/test_representation_save.py tests/unit/test_representation.py tests/integration/test_representation_writes.py tests/ui/test_auto_number_tracks.py tests/ui/test_single_panel_uncertainty.py tests/ui/test_partial_multi_save.py tests/ui/test_ui_read_errors.py`).
+- Updated sorted-editor coverage: 72 passed
+  (`QT_QPA_PLATFORM=offscreen .venv/bin/python -m pytest -q tests/ui/test_editor_identity.py`).
+- Final full offscreen suite: 2437 passed in 55.98 seconds
+  (`QT_QPA_PLATFORM=offscreen .venv/bin/python -m pytest -q -o faulthandler_timeout=30`).
+- `git diff --check`: clean.

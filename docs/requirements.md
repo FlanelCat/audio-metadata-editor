@@ -262,7 +262,7 @@ Save again reapplies the current pending values to the entire selected set, incl
 
 Single-file panel Save tracks attempted logical fields (including artwork) as unresolved before invoking the writer. Writer exceptions, including failures after modification, and failed readback leave that uncertainty pending even if the user restores cached pre-save values. Save reapplies the current panel values for those fields, preserving untouched fields and numeric-pair components; invalid numeric input still blocks writing. Artwork uncertainty survives preview changes, with existing explicit same-cover replacement semantics. Uncertainty clears after verified Save and presentation synchronization, or successful Discard/reload accepting current disk truth, never by cached equality alone. Failed Discard and Cancel preserve context. Selection, directory and Refresh guards require conclusive Save or successful Discard; close retains its existing Discard behavior of exiting without a reload or rollback. A verified explicit table edit or Auto-number supersedes only its affected field; verification-only recovery does not erase unresolved panel intent.
 
-Immediate field saves establish verification uncertainty when invoking a writer. If it raises, recovery reads current disk metadata and reconciles the affected file through the existing verification-only policy, preserving pending panel intent. A known pre-write, requested, or different persisted field value is reported distinctly; an unreadable outcome remains marked and guarded until verification or successful reload. The writer exception is always reported: Enter does not advance, and Auto-number stops at that file even if recovery finds the requested value. Earlier verified files remain saved, later files are not attempted, and no rollback or automatic write replay occurs.
+Immediate field saves establish verification uncertainty when invoking a writer. If it raises, recovery reads current disk metadata and reconciles the affected file through the existing verification-only policy, preserving pending panel intent. The requested logical value is recorded before invocation. Only semantically matching recovery resolves uncertainty; mismatching or unreadable outcomes remain marked and guarded until verification or successful reload. The writer exception is always reported: Enter does not advance, and Auto-number stops at that file even if recovery finds the requested value. Earlier verified files remain saved, later files are not attempted, and no rollback or automatic write replay occurs.
 
 Immediate field-save/Auto-number readback failures keep the prior baseline and track which fields still require verification. These unresolved files remain marked and protected by the existing transition guard; the mark means verification is pending, not that the disk write was rolled back. Enter does not advance and Auto-number stops. Save Changes retries verification without repeating the immediate write and preserves subsequent panel edits; successful explicit reload/Undo also resolves verification state. Auto-number failure counts distinguish saved-and-verified files from the potentially written file whose readback failed.
 
@@ -387,3 +387,36 @@ MP3 ordinary Comment is exclusively COMM with empty description and language eng
 ### Scrollable metadata panel
 
 The metadata panel scrolls vertically at smaller window heights, keeping the complete field order and artwork controls accessible without resizing. Tab traversal and programmatic validation focus reveal the focused control automatically. The navigator and file table remain separate splitter panes; scrolling does not change pending edits or save behavior.
+
+### Metadata representability and verified saves (S4)
+
+Explicit saves preflight only intended scalar fields. Save Changes validates the
+complete selected batch before any writer invocation; rejection retains raw
+pending values without creating persistence uncertainty. Invalid Enter input stays
+in its editor without committing or advancing. Format writers also validate direct
+calls before modifying disk.
+
+MP3 scalar text cannot contain NUL (an ID3 value separator). Both formats reject
+unpaired Unicode surrogates. Other controls and valid Unicode remain allowed where
+the field can retain them. MP3 Genre accepts a single stable genre or a single ID3
+numeric/RX/CR alias; multi-genre notation, newline truncation and unstable escaping
+are rejected. M4B retains NUL and literal genre text. Its numeric components must
+fit 0–65535; the existing zero-to-empty convention remains supported. MP3 integer
+semantics are unchanged. Nonempty logical ID3v1 Comment is not writable in M4B.
+Existing Date validation and raw physical ID3v1 preservation remain unchanged.
+
+Successful persistence requires semantic readback of every intended field, not
+merely a returned writer call. Text (including Series Number, comments and custom
+fields) is exact, except Date normalization and the single ID3 genre aliases above.
+Numeric values retain integer/None meaning with M4B zero equivalent to absence.
+Explicit artwork replacement checks payload and MIME (default JPEG); removal checks
+absence. Unrequested metadata is excluded from comparison.
+
+Readback mismatch reports that a write may have occurred, without claiming rollback.
+Single/multi-panel and per-file Generate Text/Copy intent remains pending for retry
+with current values. Returned-success immediate writes retain requested values and
+retry by reading, without automatic write replay; persistent mismatch remains
+unresolved until verified or explicitly reloaded/discarded. Immediate writer
+exceptions use the request recorded before invocation for recovery verification.
+Only matching recovery resolves uncertainty; mismatches and unreadable outcomes
+remain unresolved. The writer exception never becomes save success. Auto-number stops on mismatch, including later common-display readbacks.

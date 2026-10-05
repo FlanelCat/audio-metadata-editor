@@ -6,6 +6,7 @@ from mutagen.mp4 import AtomDataType
 from .date import normalize_date
 from .model import Metadata
 from .errors import MetadataReadError
+from .representation import scalar_values, validate_values
 
 
 def _get_text(tags, atom: str) -> str:
@@ -130,6 +131,7 @@ def write_m4b_metadata(
 
     Omitting artwork preserves it, including during field-specific writes.
     """
+    validate_values('.m4b', scalar_values(metadata, fields))
     date = normalize_date(metadata.date) if fields is None or "date" in fields else None
     audio = MP4(path)
 

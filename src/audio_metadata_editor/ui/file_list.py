@@ -15,6 +15,7 @@ from PySide6.QtGui import QAction, QDesktopServices, QFont, QKeySequence
 from PySide6.QtWidgets import (
     QHeaderView,
     QLineEdit,
+    QMessageBox,
     QStyledItemDelegate,
     QTableWidget,
     QTableWidgetItem,
@@ -22,6 +23,7 @@ from PySide6.QtWidgets import (
 from ..editing_rules import copy_target_paths
 from ..metadata.reader import read_metadata
 from ..metadata.errors import MetadataReadError
+from ..metadata.representation import validate_values, RepresentationError
 
 AUDIO_EXTENSIONS = {".mp3", ".m4b"}
 TABLE_FIELDS = {1: 'track_number', 2: 'title', 3: 'artist', 4: 'album',
@@ -127,6 +129,15 @@ class EnterNavigationDelegate(QStyledItemDelegate):
                     editor.setFocus()
                     editor.selectAll()
                     return True
+
+            try:
+                requested = (int(value) if value.strip() else None) if column == 1 else value
+                validate_values(Path(path).suffix.lower(), {TABLE_FIELDS[column]: requested})
+            except RepresentationError as exc:
+                QMessageBox.warning(view, "Invalid Metadata", str(exc))
+                editor.setFocus()
+                editor.selectAll()
+                return True
 
             # Commit the edit before requesting an immediate disk save.
             self._enter_commit = True

@@ -503,7 +503,7 @@ The UI remains responsible for presenting validation errors and returning focus 
 
 Format-specific read/write failures originate in the metadata layer. Readers raise `MetadataReadError` with the affected path and chained underlying cause; valid empty metadata remains a `Metadata` value. MP3 distinguishes a missing ID3 header from invalid audio by checking the MPEG container before accepting an untagged file. M4B accepts absent tags only after successfully opening the container.
 
-FileList returns skipped-file read errors to MainWindow for directory-scan reporting. MainWindow stages required reads before replacing presentation/state and reports post-write verification failures separately from successful completion. Its transient `_unverified_fields` map records immediate-save fields awaiting readback, without becoming a metadata cache or changing either explicit-save workflow. Immediate writer invocation establishes this state before writing. Writer exceptions trigger verification restricted to the affected path; successful recovery accepts disk truth using the existing panel-intent protections, while failed recovery retains uncertainty. Recovery returns verified metadata for outcome reporting, but the writer exception still stops Enter navigation and Auto-number. Panel retry states remain separate.
+FileList returns skipped-file read errors to MainWindow for directory-scan reporting. MainWindow stages required reads before replacing presentation/state and reports post-write verification failures separately from successful completion. Its transient `_unverified_fields` map records immediate-save fields awaiting readback, without becoming a metadata cache or changing either explicit-save workflow. Immediate writer invocation establishes this state and its `_unverified_requests` value snapshot before writing. Writer exceptions trigger verification restricted to the affected path; matching recovery uses the existing panel-intent protections, while mismatching or failed recovery retains both structures. Recovery returns verified metadata for outcome reporting, but the writer exception still stops Enter navigation and Auto-number. Panel retry states remain separate.
 
 The UI is responsible for presenting useful errors to the user.
 
@@ -654,3 +654,28 @@ The MP3 `_comment_field` helper is shared by reading and writer filtering. Canon
 ### Scrollable metadata panel
 
 MainWindow wraps the existing MetadataPanel in a widget-resizable QScrollArea within the right splitter pane. MetadataPanel retains its controls, ownership and API. A focus-change handler scoped to panel descendants calls ensureWidgetVisible, including programmatic validation focus; other panes and persistence are unchanged.
+
+### Representability and semantic verification (S4)
+
+`metadata/representation.py` owns format-aware scalar preflight and intended-field
+readback equivalence without Qt. It checks ID3 scalar separators/genre parsing,
+Unicode encoding, M4B numeric bounds and unsupported logical ID3v1 Comment.
+`writer.validate_values_for_file` adds existing version-aware Date preflight.
+Both format writers invoke scalar validation before persistence. Existing full-write
+pair selection and physical ID3v1 policy are unchanged.
+
+MainWindow snapshots intended scalar values for the whole panel batch before any
+writer call and verifies per-file and final batch readbacks before accepting intent.
+Explicit artwork options join the verification snapshot. FileList validates Enter
+input before Qt commits/closes its editor, using logical fields only; MainWindow
+also validates immediate calls. MetadataPanel provides field focus after rejection.
+
+`_unverified_requests` accompanies `_unverified_fields` before invoking an
+immediate writer, retaining requested values across failed/mismatched readbacks.
+Verification-only retries compare these requests before synchronization, including
+common-display reads. Explicit reload/Discard clears both. Writer-exception recovery
+compares against the recorded request: only matching recovery clears uncertainty,
+while the writer exception is still reported as failure. Auto-number checks later common
+Track reads against numbers verified during that operation and reinstates immediate
+verification uncertainty on mismatch. Panel/common/per-file uncertainty ownership
+and current-intent retry remain unchanged.
