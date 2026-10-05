@@ -7,6 +7,7 @@ from .date import normalize_date
 from .model import Metadata
 from .errors import MetadataReadError
 from .representation import scalar_values, validate_values
+from .path_policy import require_supported_audio_path
 
 
 def _get_text(tags, atom: str) -> str:
@@ -131,6 +132,7 @@ def write_m4b_metadata(
 
     Omitting artwork preserves it, including during field-specific writes.
     """
+    require_supported_audio_path(path)
     validate_values('.m4b', scalar_values(metadata, fields))
     date = normalize_date(metadata.date) if fields is None or "date" in fields else None
     audio = MP4(path)

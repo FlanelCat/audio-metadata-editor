@@ -142,6 +142,20 @@ Format-specific writers are responsible for translating the common `Metadata` re
 
 Metadata writers must prioritize preservation.
 
+For the v0.1.0 S5 boundary, `metadata/path_policy.py` rejects a final audio-path
+component that is a symlink without resolving it. FileList filters these entries
+before `is_file()`; the common reader rejects stale/direct symlink paths through
+MetadataReadError. Save preflight checks every panel target, and MainWindow checks
+again at immediate and panel writer dispatch. The general writer dispatcher and
+both format writers also check before processing metadata, protecting direct calls.
+Existing error handling preserves pending intent and stops failed saves. Child
+directory filtering and external-file opening are unchanged.
+
+These repeated checks are defense in depth, not race-proof protection. Ancestor
+symlinks, TOCTOU, hard links, bind mounts, inode replacement and openat/O_NOFOLLOW
+filesystem isolation are deferred; there is no target resolution or preference
+to follow audio symlinks.
+
 Changing one supported field must not unnecessarily destroy unrelated or unsupported metadata.
 
 Artwork must remain unchanged unless an artwork modification is explicitly requested.

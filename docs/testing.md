@@ -440,3 +440,31 @@ Follow-up validation:
 - Final full offscreen suite: 2437 passed in 55.98 seconds
   (`QT_QPA_PLATFORM=offscreen .venv/bin/python -m pytest -q -o faulthandler_timeout=30`).
 - `git diff --check`: clean.
+
+### S5 audio-file symlink policy
+
+`tests/ui/test_audio_symlinks.py` uses temporary public MP3/M4B fixture copies and
+symlinks to temporary targets outside the selected directory. It covers discovery
+(including uppercase extensions, dangling links and directory links), regular-file
+listing, stale discovery/load results, direct read/write dispatch and format writer
+entry, late panel/Enter/Auto-number substitution, retained panel/generated/artwork
+intent, and substitution after batch preflight with accurate partial progress.
+Writer spies establish zero invocation on rejected targets; byte comparisons prove
+target preservation. No private media or fixture masters are modified.
+
+The initial discovery/panel regression selection produced 10 failures before the
+fix. Final validation results:
+
+- Focused: 30 passed:
+  `QT_QPA_PLATFORM=offscreen .venv/bin/python -m pytest -q tests/ui/test_audio_symlinks.py`
+- Broader discovery/navigation/save and metadata integration coverage: 1505 passed:
+  `QT_QPA_PLATFORM=offscreen .venv/bin/python -m pytest -q tests/ui/test_audio_symlinks.py tests/ui/test_folder_navigator.py tests/ui/test_directory_tree.py tests/ui/test_directory_transitions.py tests/ui/test_sorted_loading.py tests/ui/test_table_editing.py tests/ui/test_editor_identity.py tests/ui/test_panel_preservation.py tests/ui/test_initial_multi_selection.py tests/ui/test_partial_multi_save.py tests/ui/test_single_panel_uncertainty.py tests/ui/test_immediate_writer_failure.py tests/ui/test_auto_number_tracks.py tests/ui/test_generate_text.py tests/ui/test_copy_cells.py tests/ui/test_representation_save.py tests/integration`
+- Full offscreen suite: 2467 passed in 56.41 seconds:
+  `QT_QPA_PLATFORM=offscreen .venv/bin/python -m pytest -q -o faulthandler_timeout=30`
+- `git diff --check`: clean.
+
+Existing folder navigator tests retain child-directory symlink omission, and the
+broader/full suites protect normal regular-file saves. These tests exercise visible
+symlink substitution at deterministic boundaries, not TOCTOU race-proofing, ancestor
+symlink traversal, hard links, bind mounts, inode replacement, openat/O_NOFOLLOW
+handling or general filesystem isolation. Those protections remain deferred.

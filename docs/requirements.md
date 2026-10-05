@@ -35,6 +35,19 @@ Directory structures must not be modified simply by loading them into the applic
 
 Opening or scanning files must never modify their metadata.
 
+For v0.1.0, audio-file symlinks are unsupported. Discovery omits symlinked MP3/M4B
+entries, and loading/saving rejects a final path component that is a symlink,
+including one substituted after discovery. Saves must not resolve and edit the
+target. Rejection reports an error, retains pending panel/per-file intent and
+prevents successful Enter advance or a false complete-batch success. A batch
+stops if a later check rejects a path; earlier completed writes are not rolled
+back. Symlinked child directories remain omitted. No follow-symlinks preference
+is provided; ordinary audio files and external-file opening remain unchanged.
+
+This is a best-effort final-component check, not filesystem isolation. TOCTOU
+races, symlinked ancestor components, hard links, bind mounts, inode replacement,
+and race-proof openat/O_NOFOLLOW-style handling are deferred.
+
 ## 5. Metadata Reading
 
 The application must read metadata embedded in supported audio files.

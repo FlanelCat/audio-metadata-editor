@@ -300,7 +300,7 @@ class FileList(QTableWidget):
     def directory_files(directory: Path):
         return sorted(
             (entry for entry in directory.iterdir()
-             if entry.is_file() and entry.suffix.lower() in AUDIO_EXTENSIONS),
+             if not entry.is_symlink() and entry.is_file() and entry.suffix.lower() in AUDIO_EXTENSIONS),
             key=lambda entry: entry.name.lower(),
         )
 

@@ -28,6 +28,7 @@ from PySide6.QtWidgets import (
 
 from ..editing_rules import changed_scalar_fields, effective_multi_fields, effective_fields_for_target
 from ..metadata.writer import write_metadata, validate_values_for_file
+from ..metadata.path_policy import require_supported_audio_path, UnsupportedAudioPathError
 from ..metadata.date import DateVerificationError
 from ..metadata.representation import scalar_values, verify_values, RepresentationError, VerificationError
 from .dialogs.auto_number_dialog import AutoNumberDialog
@@ -567,6 +568,9 @@ class MainWindow(QMainWindow):
         try:
             for path, values in save_intent.items():
                 validate_values_for_file(path, values)
+        except UnsupportedAudioPathError as exc:
+            QMessageBox.warning(self, "Unsupported Audio Path", str(exc))
+            return
         except Exception as exc:
             field = exc.field if isinstance(exc, RepresentationError) else 'date'
             QMessageBox.warning(self, "Invalid Metadata", f"Cannot save {path.name}: {exc}")
@@ -618,6 +622,7 @@ class MainWindow(QMainWindow):
                     if not fields and not artwork_options:
                         continue
 
+                    require_supported_audio_path(path)
                     suffix = path.suffix.lower()
 
                     # An attempted write can invalidate the old comparison
@@ -748,6 +753,7 @@ class MainWindow(QMainWindow):
             self._unresolved_single_fields.add("artwork")
 
         try:
+            require_supported_audio_path(self.current_file)
             suffix = self.current_file.suffix.lower()
 
             if suffix == ".mp3":
@@ -1490,6 +1496,7 @@ class MainWindow(QMainWindow):
         previous_value = getattr(metadata, field)
         if previous_value != value:
             setattr(metadata, field, value)
+            require_supported_audio_path(path)
             # Invocation may modify disk even if the writer subsequently raises.
             self._unverified_fields.setdefault(path, set()).add(field)
             self._unverified_requests.setdefault(path, {})[field] = value
