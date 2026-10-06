@@ -5,6 +5,12 @@ editing and predictable saves.
 
 ![Audio Metadata Editor main window](docs/images/main-window.png)
 
+<a href="https://www.buymeacoffee.com/flanelcat">
+  <img src="https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png"
+       alt="Buy FlanelCat a Coffee"
+       height="50">
+</a>
+
 ## Key features
 
 - Folder navigation and a sortable metadata table.
