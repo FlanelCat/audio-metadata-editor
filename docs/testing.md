@@ -210,6 +210,16 @@ pytest
 
 The project should be configured so that running the test suite does not require access to the user's audiobook library.
 
+### GitHub Actions CI
+
+The application is developed and manually tested on CachyOS Linux. The
+[CI workflow](../.github/workflows/ci.yml) uses GitHub-hosted Ubuntu 24.04 runners
+with Python 3.12, 3.13, and 3.14. Each job installs `libegl1`, the project and its
+test dependencies, runs the complete automated pytest suite using PySide6 with
+`QT_QPA_PLATFORM=offscreen`, and verifies wheel and sdist builds with
+`python -m build`. CI does not replace manual GUI testing. Windows and macOS
+remain unverified.
+
 ## 11. Codex Requirements
 
 When Codex changes application behavior, it should:
